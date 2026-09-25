@@ -1,6 +1,6 @@
 import { squash } from './core/validate.js';
 import { recordFetchFailure } from './core/diagnostics.js';
-import { CATALOGUES, canonicalRicPerson, catalogueOf, isMintOnly, isRicPerson, isSectionOnly, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
+import { CATALOGUES, canonicalRicPerson, catalogueOf, isMintOnly, isRicPerson, isSectionOnly, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
 // Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
@@ -124,6 +124,13 @@ const SUPPORTED = new RegExp(`^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Sele
 // Nor is a numbered part that names one after other words ("cf. RIC 972", "Lot 80: RIC 972", "cf. Craw. 44/5"), which would search a type as loose
 // text; "RIC –" (not in RIC) has no number. The Crawford names are the ones RRC's prefixPattern reads.
 const NAMED = /(?:^|[^\p{L}])(?:RIC|R\.I\.C|RRC|Cr|Craw(?:f|ford)?|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
+// K-02: whether text sets out to name a catalogue — it begins like one of the supported catalogues, or a part of it names one with a number — so that
+// text the lookup cannot read is a misspelt reference, answered with the spellings, rather than free words a collector typed to find a coin.
+export function namesCatalogue(text) {
+  const value = String(text ?? '').replace(INVISIBLE, '').trim();
+  return SUPPORTED.test(value) || value.split(';').some((part) => /\d/.test(part) && NAMED.test(part));
+}
+
 // Sentence punctuation a selection drags along ("RIC 972;", "Hadrian 12,"); no catalogue's number ends in it.
 const unpunctuate = (value) => value.replace(/\s*[.,;:]+$/, '');
 // A reference as read: without that punctuation, nor the brackets or single quotes a dealer wraps it in ("(RIC 972)", "‘Price 23’."); brackets that
@@ -272,7 +279,34 @@ function readType(text, clean = true) {
   return clean ? withEdition(withRange(type, () => readClean(cleanReference(written, false))), written) : type;
 }
 
-function readClean(value) {
+// K-03: no keyboard has a "²" key, so RIC I's second edition is typed "RIC I2", "RIC I^2" or "RIC I2nd" (and "RIC I 2nd" without the "ed."
+// that the edition group below already reads). Only volume I is read from a glued "2": it has no parts, so "I2" can be nothing else, while "V2"
+// or "II.32" could be a part or a number. A caret is a written superscript on any volume or part ("RIC II.3^2"). One fixed run at the start each.
+const GLUED_SECOND = /^(RIC\s*(?:vol\.?\s*)?I)(?:2(?:nd)?|\s+2nd)(?![\p{L}\d])(?!\s*ed)/iu;
+const CARET_SECOND = /^(RIC\s*(?:vol\.?\s*)?(?:X|IX|VIII|VII|VI|V|IV|III|II|I|10|[1-9])(?:\s*[./]\s*\d)?)\s*\^\s*2(?!\d)/i;
+const squared = (value) => value.replace(GLUED_SECOND, '$1²').replace(CARET_SECOND, '$1²');
+
+// K-03: a ruler or a mint written after the number ("RIC 306 Nero", "RIC II 253 Trajan", "Ric 306, nero") reads exactly as the same name before it:
+// only where the text before the number is RIC and a volume and nothing else, the text after it is one name the people or mint tables know, and
+// reading it before the number really makes it the section. Anything else stays unread, as it was. Read by tokens, never by a pattern that could
+// backtrack over the words.
+function rulerAfterNumber(value) {
+  const tokens = value.split(' ');
+  const at = tokens.findLastIndex((token) => /^\d/.test(token));
+  if (at < 1 || at === tokens.length - 1) return null;
+  const head = tokens.slice(0, at).join(' ');
+  const number = tokens[at].replace(/,$/, '');
+  const name = tokens.slice(at + 1).join(' ').replace(/^,\s*/, '');
+  if (!/^RIC(?![a-z])/i.test(head) || !number || /[\d,;]/.test(name) || !name) return null;
+  if (volumesOf(name).length === 0 && !isRicPerson(name) && !ricMintSection(name)) return null;
+  const bare = readClean(`${head} 1`, false);
+  if (bare?.catalogue !== 'RIC' || bare.section) return null;
+  const read = readClean(`${head} ${name} ${number}`, false);
+  return read?.catalogue === 'RIC' && read.section === name && read.number === number ? read : null;
+}
+
+function readClean(written, turned = true) {
+  const value = squared(written);
   // The catalogues whose whole reference is a key and a number; RIC and Bop carry a volume or a king and are read below.
   for (const [catalogue, { referencePattern }] of Object.entries(CATALOGUES)) {
     const number = referencePattern && value.match(referencePattern)?.[1];
@@ -296,7 +330,7 @@ function readClean(value) {
   }
   const any = value.match(RIC_ANY_VOLUME);
   const ruler = any?.[1] ?? any?.[2] ?? '';
-  if (!any || (ruler && volumesOf(ruler).length === 0 && !isRicPerson(ruler))) return null;
+  if (!any || (ruler && volumesOf(ruler).length === 0 && !isRicPerson(ruler))) return turned ? rulerAfterNumber(value) : null;
   return ricReference(any[3], '', ruler);
 }
 
@@ -434,7 +468,13 @@ export function nomismaLabel(jsonld, slug) {
   return english(node?.['skos:prefLabel']);
 }
 
-export function toCard(jsonld, corpus, labels = {}) {
+// The card's four named slots, in the order namedSlugs reads them.
+const NAMED_SLOTS = Object.freeze(['authority', 'denomination', 'mint', 'material']);
+
+// unreachable: the slugs nomisma.org did not answer for (X-10). Their slot is left empty rather than printed as an identifier
+// ("euthydemus_i_bactria"), and the card lists them as unnamed, each with its slot, for a retry that asks for those alone. A slug nomisma answered
+// for without an English name keeps the identifier, as the bundled catalogue does.
+export function toCard(jsonld, corpus, labels = {}, unreachable = []) {
   const main = mainNode(jsonld);
   if (!main) return null;
   const uri = main['@id'];
@@ -443,7 +483,9 @@ export function toCard(jsonld, corpus, labels = {}) {
     const node = graphOf(jsonld).find((entry) => entry['@id'] === `${uri}#${name}`) ?? {};
     return { legend: english(node['nmo:hasLegend']), description: english(node['dcterms:description']) };
   };
-  const [authority, denomination, mint, material] = namedSlugs(main).map((slug) => (slug ? labels[slug] ?? slug : null));
+  const slugs = namedSlugs(main);
+  const missing = slugs.map((slug, index) => (slug && !Object.hasOwn(labels, slug) && unreachable.includes(slug) ? { field: NAMED_SLOTS[index], slug } : null)).filter(Boolean);
+  const [authority, denomination, mint, material] = slugs.map((slug) => (!slug || missing.some((entry) => entry.slug === slug) ? null : labels[slug] ?? slug));
   // Only a type with one authority and one obverse portrait has a portrait to report, and the name never falls back to its slug: an unresolved label
   // would print as "cornelia_salonina", so it fails closed to null instead.
   const authorities = main['nmo:hasAuthority'] ?? main['nmo:hasIssuer'] ?? [];
@@ -461,7 +503,26 @@ export function toCard(jsonld, corpus, labels = {}) {
     dates: formatDates(main['nmo:hasStartDate']?.[0]?.['@value'], main['nmo:hasEndDate']?.[0]?.['@value']),
     obverse: side('obverse'),
     reverse: side('reverse'),
+    ...(missing.length ? { unnamed: missing } : {}),
   };
+}
+
+// X-10: asks nomisma.org again for the names a card was drawn without, and those alone; answers the card with every name that came back, still
+// listing the ones that did not. A card with nothing unnamed is answered as it is, with no request.
+export async function nameCard(card, { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = {}) {
+  const missing = Array.isArray(card?.unnamed) ? card.unnamed.filter((entry) => NAMED_SLOTS.includes(entry?.field) && typeof entry?.slug === 'string') : [];
+  if (!missing.length) return card;
+  const timer = withTimeout(timeoutMs);
+  const unreachable = [];
+  try {
+    const labels = await resolveLabels([...new Set(missing.map(({ slug }) => slug))], { fetchImpl, cache, signal: timer.signal, unreachable });
+    const { unnamed, ...named } = card;
+    for (const { field, slug } of missing) if (!unreachable.includes(slug)) named[field] = labels[slug] ?? slug;
+    const still = missing.filter(({ slug }) => unreachable.includes(slug));
+    return still.length ? { ...named, unnamed: still } : named;
+  } finally {
+    timer.done();
+  }
 }
 
 // The other sections of a volume that share this one's name before its parenthesis ("Zeno" and "Zeno (West)" for "Zeno (East)"), by the rulerKey rule
@@ -576,17 +637,27 @@ async function getJson(url, fetchImpl, signal) {
   return JSON.parse(await boundedText(response));
 }
 
-function withTimeout(ms) {
+// X-06: the deadline aborts with a TimeoutError of its own, so a lookup that ran out of time is told apart from one whose connection failed; a caller's
+// cancel signal stops it too, with its own reason.
+function withTimeout(ms, cancel) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  return { signal: controller.signal, done: () => clearTimeout(timer) };
+  const timer = setTimeout(() => controller.abort(new DOMException('No answer within the lookup deadline.', 'TimeoutError')), ms);
+  const stop = () => controller.abort(new DOMException('The lookup was cancelled.', 'AbortError'));
+  if (cancel?.aborted) stop();
+  cancel?.addEventListener?.('abort', stop);
+  return { signal: controller.signal, done: () => { clearTimeout(timer); cancel?.removeEventListener?.('abort', stop); } };
 }
 
-const failureOutcome = (error) => error?.status === 429 ? { status: 'rate-limited', httpStatus: 429 }
-  : error?.status >= 500 && error.status <= 599 ? { status: 'unavailable', httpStatus: error.status }
-    : { status: 'network' };
+// A request the deadline or a cancel stopped is said as that (X-06): "timeout" and "cancelled", never a failed connection.
+const failureOutcome = (error, signal) => (signal?.aborted ? { status: signal.reason?.name === 'TimeoutError' ? 'timeout' : 'cancelled' }
+  : error?.status === 429 ? { status: 'rate-limited', httpStatus: 429 }
+    : error?.status >= 500 && error.status <= 599 ? { status: 'unavailable', httpStatus: error.status }
+      : { status: 'network' });
+const stoppedByCaller = (signal) => signal?.aborted && signal.reason?.name !== 'TimeoutError';
 
-export async function resolveLabels(slugs, { fetchImpl = fetch, cache = new Map(), signal } = {}) {
+// unreachable, when given, collects the slugs nomisma.org did not answer for (a failed connection, an outage, the deadline), as against a concept it
+// answered for without an English name (404, or no label), which falls back to its slug as it always did.
+export async function resolveLabels(slugs, { fetchImpl = fetch, cache = new Map(), signal, unreachable } = {}) {
   const labels = {};
   await Promise.all(slugs.map(async (slug) => {
     const cached = cache.get(slug);
@@ -594,7 +665,12 @@ export async function resolveLabels(slugs, { fetchImpl = fetch, cache = new Map(
     try {
       const label = nomismaLabel(await getJson(`${NOMISMA}${slug}.jsonld`, fetchImpl, signal), slug);
       if (label) { labels[slug] = label; cache.set(slug, label); }
-    } catch { /* unlabelled concepts fall back to their slug */ }
+    } catch (error) {
+      // A cancel or the deadline stops the whole lookup, never one name of it: the card is not drawn with its names "unavailable" (review I1).
+      if (signal?.aborted) throw error;
+      // Unlabelled concepts fall back to their slug; one nomisma.org never answered for is said to be unnamed instead.
+      if (error?.status !== 404) unreachable?.push(slug);
+    }
   }));
   return labels;
 }
@@ -615,8 +691,9 @@ async function cardOutcome(jsonld, corpus, { fetchImpl, cache, signal, citation 
   // Only OCRE files a type under an authority a portrait can differ from, so only OCRE asks for the portrait's name: no request at all when it is the
   // authority already asked for (the common case), one more parallel, cached, same-deadline one when it differs.
   const slugs = [...new Set([...nomismaSlugs(jsonld), ...(corpus === 'ocre' ? [portraitSlug(jsonld)] : [])].filter(Boolean))];
-  const labels = await resolveLabels(slugs, { fetchImpl, cache, signal });
-  const card = toCard(jsonld, corpus, labels);
+  const unreachable = [];
+  const labels = await resolveLabels(slugs, { fetchImpl, cache, signal, unreachable });
+  const card = toCard(jsonld, corpus, labels, unreachable);
   if (!card) return { status: 'network' };
   if (corpus === BIGR) card.bop = bopDetails(card.label, citation === undefined ? await fetchCitation(card.id, fetchImpl, signal) : citation);
   return { status: 'ok', card };
@@ -636,14 +713,14 @@ export async function lookupById(corpus, id, options = {}) {
     if (local.status === 'ok') return local;
     if (!online) return { status: 'online-required', localStatus: local.status, corpus, id };
   }
-  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, signal, citation } = options;
-  const timer = signal ? { signal, done() {} } : withTimeout(timeoutMs);
+  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, signal, citation, cancel } = options;
+  const timer = signal ? { signal, done() {} } : withTimeout(timeoutMs, cancel);
   try {
     const jsonld = await getJson(recordUrl(corpus, id), fetchImpl, timer.signal);
     return await cardOutcome(jsonld, corpus, { fetchImpl, cache, signal: timer.signal, citation });
   } catch (error) {
-    void recordFetchFailure('lookup', error);
-    return failureOutcome(error);
+    if (!stoppedByCaller(timer.signal)) void recordFetchFailure('lookup', timer.signal.aborted ? timer.signal.reason : error);
+    return failureOutcome(error, timer.signal);
   } finally {
     timer.done();
   }
@@ -823,6 +900,23 @@ function heldEdition(volume) {
   });
   return held.length === 1 && /\(2nd edition\)$/.test(held[0].value) ? held[0].value : '';
 }
+// X-04: a first-edition mark a RIC citation keeps on its number ("RIC I 306 (1st ed.)", "RIC 306 (1. Aufl.)", "(1re éd.)"): withEdition carries only a
+// second-edition mark onto the volume. On a volume OCRE and the bundle hold in their second edition alone (RIC I, II.1 and II.3) no lookup can answer
+// it: those numbers are the 1923 and 1926 books', not the ones held. The volume is the one written, else the one its ruler implies; with neither, it
+// is any of the three. A volume held in another edition too ("RIC II", whose 1926 book is held) is left to the lookup, as is anything unmarked.
+export const FIRST_EDITION = /\s*\((?:1st|first)\s+ed(?:ition|s)?\.?\)$|\s*\(1\.\s*Aufl(?:\.|age)?\)$|\s*\(1(?:re|ère|er)\s+[ée]d\.?\)$/i;
+export function firstEditionCitation(reference) {
+  if (reference?.catalogue !== 'RIC' || !FIRST_EDITION.test(String(reference.number ?? ''))) return null;
+  const number = String(reference.number).replace(FIRST_EDITION, '').trim();
+  const typed = unquote(reference.volume);
+  const person = unquote(reference.section) || (Array.isArray(reference.rulers) && reference.rulers.length === 1 ? reference.rulers[0] : '');
+  const implied = !typed && person ? volumeFor(person, '') : '';
+  const volume = typed ? heldEdition(typed) : /\(2nd edition\)$/.test(implied) ? implied : '';
+  if (typed && !volume) return null;
+  const [numeral, part] = shelf(volume);
+  return { number, volume, book: volume ? `RIC ${numeral.toUpperCase()}${part ? `.${part}` : ''}` : '' };
+}
+
 export function soleEdition(volume, title) {
   const held = heldEdition(volume);
   return Boolean(held) && norm(parseReference(title, false)?.volume ?? '') === norm(held);
@@ -937,6 +1031,9 @@ export async function eitherReading(reference, look) {
 }
 
 export function lookupType(given, options = {}) {
+  // Answered before any request: no catalogue here or online holds a first edition's numbers.
+  const first = firstEditionCitation(given);
+  if (first) return Promise.resolve({ status: 'first-edition', corpus: 'ocre', query: buildQuery(given).query, ...first });
   return eitherReading(given, (reference) => lookupOneType(reference, options));
 }
 
@@ -946,7 +1043,7 @@ async function lookupOneType(given, options = {}) {
   // left as it was.
   const mint = ricMintSection(given.section);
   const reference = mint ? { ...given, section: mint } : given;
-  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS } = options;
+  const { fetchImpl = fetch, cache = new Map(), timeoutMs = TIMEOUT_MS, cancel } = options;
   const built = buildQuery(reference);
   const { corpus, query, id } = built;
   const { localProvider, online = true } = options;
@@ -959,7 +1056,7 @@ async function lookupOneType(given, options = {}) {
     if (local.status === 'ok' || local.status === 'candidates' || local.status === 'too-many') return local;
     if (!online) return { status: 'online-required', localStatus: local.status, corpus, query };
   }
-  const timer = withTimeout(timeoutMs);
+  const timer = withTimeout(timeoutMs, cancel);
   const feed = (q) => getText(`${ORIGIN}/${corpus}/apis/search?q=${encodeURIComponent(q)}`, fetchImpl, timer.signal);
   const search = async (q) => parseFeed(await feed(q));
   // A section typed or read from the reference itself ("RIC 268 (Elagabalus)") wins over rulers from the surrounding text. A mint is no ruler's
@@ -1022,6 +1119,14 @@ async function lookupOneType(given, options = {}) {
       if (![found.card.authority, found.card.portrait].some((name) => asked.includes(norm(name)))) {
         return { status: 'candidates', candidates: [picked.entry], partial: true, corpus, query: shown };
       }
+      // A heading names the man on the coin (lead, review M4): named as the authority alone, with another person on the obverse, the coin is offered
+      // with the reason and not opened, as the bundle offers it.
+      const { authority, portrait } = found.card;
+      // A restoration names its restorer in the legend and RIC files it under him, so it opens under his name (review R2), as the bundle does.
+      const restored = /\bREST(?:ITVIT)?\b/.test(`${found.card.obverse?.legend ?? ''} ${found.card.reverse?.legend ?? ''}`);
+      if (!restored && portrait && isRicPerson(portrait) && !asked.includes(norm(portrait)) && asked.includes(norm(authority))) {
+        return { status: 'candidates', candidates: [{ ...picked.entry, note: `filed under ${authority}; OCRE's obverse portrait: ${portrait}` }], partial: true, corpus, query: shown };
+      }
     }
     // A coin from another ruler opens only when the card says why it is filed there AND the portrait it names is the ruler that was typed: the portrait
     // facet carries reverse portraits too, so a hit can be a third ruler's coin whose obverse happens to head the section. Anything else is offered.
@@ -1031,8 +1136,9 @@ async function lookupOneType(given, options = {}) {
     }
     return found;
   } catch (error) {
-    void recordFetchFailure('lookup', error);
-    return failureOutcome(error);
+    if (!stoppedByCaller(timer.signal)) void recordFetchFailure('lookup', timer.signal.aborted ? timer.signal.reason : error);
+    // X-04: what the bundle said before the request failed goes with the failure: "not in the bundle" is an answer the connection did not change.
+    return local ? { ...failureOutcome(error, timer.signal), localStatus: local.status } : failureOutcome(error, timer.signal);
   } finally {
     timer.done();
   }

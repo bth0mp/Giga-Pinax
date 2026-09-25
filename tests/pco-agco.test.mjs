@@ -209,7 +209,7 @@ test('the popup offers every catalogue the table reads, and credits every bundle
   const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
   const select = html.match(/<select id="catalogue"[^>]*>(.*?)<\/select>/s)[1];
   assert.deepEqual([...select.matchAll(/<option value="([^"]+)">/g)].map((match) => match[1]).sort(), Object.keys(CATALOGUES).sort());
-  const footer = html.match(/<footer class="popup-footer"><span>([^<]*)<\/span>/)[1];
+  const footer = html.match(/<p id="credit-line" class="credit-line">.*?<span title="([^"]*)">Type data/)[1];
   for (const { label } of Object.values(LOCAL_CORPORA)) assert.match(footer, new RegExp(`(?<![A-Z])${label}(?![A-Z])`), label);
 });
 

@@ -61,8 +61,8 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
 
 7. **Price check on a real signed-in acsearch session.** Sign in to acsearch in the same browser with an account that
     shows hammer prices. Look up `Price 23` and select **Get prices**.
-    *Expected:* the query shows beside **Change search**, and a line of the form "N of M results cite Price 23"; the median is taken
-    from the citing results only, and the rest are still listed under **Inspect sales**. No sign-in note appears. The
+    *Expected:* the query shows beside **Change search**, and under the median one sentence of the form "Median of N sales citing
+    Price 23, YYYY–YYYY (M results, K unpriced) · last …"; the median is taken from the citing results only, and the rest are still listed under **Inspect sales**. No sign-in note appears. The
     automated fixtures for this page are synthetic, so unless a scrubbed real page has been added to
     `tests/fixtures/acsearch-real/`, this is the only check that the signed-in page is read correctly.
     Open the same search on acsearch itself and compare two of the listed prices, date and hammer, with the rows under
@@ -72,12 +72,16 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     --account YOUR_NAME --account YOUR_EMAIL`; [the folder's README](../tests/fixtures/acsearch-real/README.md) says how
     to review it before committing it.
     Under **Inspect sales**, include by hand one row that does not cite Price 23.
-    *Expected:* the line now reads "N of M results cite Price 23; K of M counted", with K one more than N: the row you
-    included is counted, and never counted as a citation. **Copy summary** says the same.
+    *Expected:* the sentence now reads "Median of K sales, …" with a line beside it, "N of M results cite Price 23; K of M
+    counted", K one more than N: the row you included is counted, and never counted as a citation. **Copy summary** says
+    the same.
 
 8. **The signed-out note.** Repeat the same lookup in a private window where acsearch is not signed in.
-    *Expected:* the sign-in note appears and points at acsearch. It must not appear in step 7, and it must not appear
+    *Expected:* the note says acsearch shows hammer prices to signed-in subscribers, points to **Get CoinArchives
+    prices** below (now the filled button) and to **Sign in ↗**. It must not appear in step 7, and it must not appear
     merely because the only hits are lots that have yet to be sold.
+    Where every price on the page is a `*` and a lot is still to come, the note instead reads "Every price on this page
+    is hidden (*)…" with **Sign in ↗**, never "No hammer prices among the sales…".
 
 9. **A merge import preview that really overwrites something.** A merge keeps whichever copy of a record was written
     last, so a backup exported before your latest edit updates nothing and never reaches the safety copy. Make the
@@ -126,6 +130,8 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     | `Philip I, 244-249. Antoninianus, Rome. RIC 27b. 4.23 g.` pasted as lot text | one reference, `RIC 27b` read under the heading's ruler, opening **RIC IV Philip I 27B** |
     | `Crawford 44/5` | the **RRC 44/5** card |
     | `SC 1266.2` | the **Seleucid Coins (part 1) 1266.2** card |
+    | `RIC I 306 (1st ed.)` | no card, and no request: "RIC I 306 is cited from the first edition of RIC I…", not a connection failure |
+    | `RIC I² Nero 9999` | "Not in the bundled RIC I² (checked offline). numismatics.org couldn’t be reached to look further." |
 
     *Expected:* every one of them answers with the network off, and each card names its authority, denomination, mint,
     material and portrait in English rather than showing identifiers. Prices, which need the network, stay unavailable.
@@ -267,14 +273,16 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     and while the form is open save something in another workspace tab. *Expected:* the form stays open with what you
     typed.
 
-30. **A coin saved from the popup in one step.** Look up `RIC I² Nero 306` in the toolbar popup and select **Save**
-    beside **Type**.
-    *Expected:* no tab opens; the row under the card reads **Saved · Open · Undo**. Select **Undo**
-    within ten seconds. *Expected:* "Removed from your watchlist." and **Save** is back. Select **Save** again, wait ten
+30. **A coin saved from the popup in one step.** Look up `RIC I² Nero 306` in the toolbar popup and select **Watch**
+    beside **Type** (its tooltip: "Add to your watchlist to track its auction, bid and outcome in the workspace").
+    *Expected:* no tab opens; the row under the card reads **Watching · Open · Undo**. Select **Undo**
+    within ten seconds. *Expected:* "Removed from your watchlist." and **Watch** is back. Select **Watch** again, wait ten
     seconds, then look up `RIC I (second edition) Nero 306`. *Expected:* the card shows a **Watching** pill instead of
-    **Save** (its tooltip reads "On your watchlist"); selecting it opens the workspace on that coin. Under **Upcoming**, select **Watch** on a lot.
+    **Watch** (its tooltip reads "On your watchlist"); selecting it opens the workspace on that coin. Under **Upcoming**, select **Watch** on a lot.
     *Expected:* the line under the list offers **Add** for its sale day; **Add** attaches a date-only auction to the
-    saved lot, and **Undo** then takes back both.
+    saved lot, and **Undo** then takes back both. Open the **Watchlist** tab. *Expected:* "1 coin on your watchlist" (or
+    the count you have) over the list, and the coin you just saved as its first row; a coin with no auction ends its row
+    with "no sale date" and **Add**, which opens that coin in the workspace.
 
 31. **The popup's last answer.** Look up `RIC I² Nero 306` in the toolbar popup and wait for the median. Click the
     page so the popup closes, then open it again.
@@ -326,7 +334,23 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     acsearch ↗** an acsearch search for the type. Record the coin as **Won**. *Expected:* the outcome's line offers
     **Mark found on your want list**, which marks the want found by that coin.
 
-36. **Records that can't be read.** Export a backup first. Open **Settings**, open the developer tools on that page and
+36. **What a newcomer types.** In the popup, type `nero denarius` and select **Look up**.
+    *Expected:* "Nero is a RIC ruler…", **Refine reference** open on RIC with Nero in its field and the cursor in the
+    number, a **Search acsearch for “nero denarius”** button, the three example chips and a line of spellings; the
+    network panel shows no request. Select the search. *Expected:* acsearch's median for those words, with no card and
+    nothing to save. Type `Athens tetradrachm`. *Expected:* "No catalogue reference in that text." and the same button
+    for those words. Paste `https://www.cngcoins.com/Lot.aspx?LOT_ID=1`. *Expected:* "That’s a web address…", **Capture
+    the lot page you’re on** opened, and no acsearch request. Type `RIC XI Nero 1`. *Expected:* "Couldn’t read that
+    reference…" as before.
+
+37. **A site that hangs.** In the browser's developer tools, throttle the network so that acsearch takes over 15 seconds
+    to answer, then look up `Price 23`. *Expected:* after about four seconds the median block reads "Still waiting for
+    acsearch… Cancel"; **Cancel** stops the request and says the search was cancelled. Look up `Price 23` again and wait.
+    *Expected:* "acsearch didn’t answer within 15 seconds. It may be slow or down. Try again", never "Couldn’t reach
+    acsearch". Look up `Bop Euthydemus I 24A` the same way. *Expected:* "Still waiting for numismatics.org… Cancel" under
+    the box after four seconds, and "numismatics.org didn’t answer within 15 seconds…" at the deadline.
+
+38. **Records that can't be read.** Export a backup first. Open **Settings**, open the developer tools on that page and
     run, in its console (`browser` in place of `chrome` in Firefox):
 
     ```js
@@ -341,7 +365,7 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     downloads first, then the backup's records are back and the notice goes. Damage the data again and select **Start
     fresh, keeping a copy**: the raw file downloads, you are asked with its name, and on yes the page opens empty.
 
-37. **A coin set aside, fixed or removed.** Save a coin with a reference in the workspace. In Settings' developer-tools
+39. **A coin set aside, fixed or removed.** Save a coin with a reference in the workspace. In Settings' developer-tools
     console run (`browser` in place of `chrome` in Firefox):
 
     ```js

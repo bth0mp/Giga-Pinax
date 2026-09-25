@@ -143,6 +143,26 @@ export function replaceAuctionContextInPayload(payload, auctionContext) {
   return clean && auctionContext ? { ...clean, auctionContext } : clean;
 }
 
+// X-11: what the collector is told when the background never answered, or the message port closed under the save: the raw browser error ("The message
+// port closed before a response was received.") is no sentence for him. It names the button to press again, and says why pressing it is safe.
+// An Undo is no save: its request is a removal, retried under its own id and never applied twice (review M2).
+export const noAnswerMessage = (button) => `Giga Pinax’s background didn’t answer. Select ${button} again — the same request is retried, never ${button === 'Undo' ? 'applied' : 'saved'} twice.`;
+// X-05: a save whose answer never comes (a worker that died mid-command) is waited for this long, never for ever: then it is said under the button
+// that was pressed, with the same request offered again, and the button comes back.
+export const SAVE_ANSWER_MS = 8000;
+const LATE = Symbol('late');
+// A reply, or LATE once the wait is over. The send keeps going: a reply that comes later is the store's to keep, and the next snapshot shows it.
+async function answerWithin(send, ms) {
+  let timer = 0;
+  const sent = Promise.resolve().then(send);
+  sent.catch(() => {});
+  try {
+    return await Promise.race([sent, new Promise((resolve) => { timer = setTimeout(() => resolve(LATE), ms); })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Which coin a payload is about: a storage outcome nobody can tell (unknown) keeps its own payload and request id, so the same save is retried rather
 // than written twice - but only for that coin. A different reference or page is a different save and starts its own request.
 const draftIdentity = (payload) => `${payload?.reference ?? ''}\n${payload?.pageUrl ?? ''}`;
@@ -162,7 +182,7 @@ export function createDraftSaver({ newRequestId: makeRequestId, sendCommand: sen
           // No reply at all is no outcome to read: the save is not known to have been refused, so its request is kept for the retry.
           const outcome = reply ? reply.outcome ?? reply.error?.outcome : 'unknown';
           if (outcome !== 'unknown') retry = null;
-          return reply ?? { ok: false };
+          return reply ?? { ok: false, outcome: 'unknown', unanswered: true };
         }
         retry.draftId = reply.value.id;
       }
@@ -170,7 +190,10 @@ export function createDraftSaver({ newRequestId: makeRequestId, sendCommand: sen
       if (opened?.ok === false) return opened;
       retry = null;
       return { ok: true };
-    })().catch((error) => ({ ok: false, message: error?.message || 'Could not save these details.' }))
+    // A send that threw never reached the store's answer (the port closed): its request is kept for the retry, and the caller says so in words.
+    // Once the draft is saved, only its opening can have failed.
+    })().catch((error) => (retry?.draftId ? { ok: false, message: error?.message || 'Could not open these details in the workspace.' }
+      : { ok: false, outcome: 'unknown', unanswered: true }))
       .finally(() => { pending = null; });
     return pending;
   };
@@ -308,19 +331,47 @@ export function nextEventText(event, { now = new Date().toISOString(), locale = 
 }
 
 
-// The coins that want the collector now, at most five: those whose auction has ended with no outcome, then those whose auction is next, soonest first.
-// Each is said as a workspace row says a coin (H-16): its reference first, then its title, then when.
-export function coinsToWatch(snapshot, { now = new Date().toISOString(), locale = 'en-US', limit = 5 } = {}) {
+const openLot = (lot) => (lot?.outcome?.status ?? 'open') === 'open';
+// The open coins whose auction is still to come or under way, with that auction and when it is.
+function comingLots(snapshot, now) {
   const events = new Map((snapshot?.auctionEvents ?? []).map((event) => [event.id, event]));
-  const row = (lot, when) => ({ lot, reference: displayReference(lot.reference ?? ''), title: String(lot.title ?? ''), when });
-  const ended = lotsNeedingOutcome(snapshot, now).map((lot) => row(lot, 'ended, record the outcome'));
-  const coming = (snapshot?.lots ?? [])
-    .filter((lot) => (lot?.outcome?.status ?? 'open') === 'open' && events.has(lot.auctionEventId))
+  return (snapshot?.lots ?? [])
+    .filter((lot) => openLot(lot) && events.has(lot.auctionEventId))
     .map((lot) => ({ lot, event: events.get(lot.auctionEventId), timing: eventTiming(events.get(lot.auctionEventId), now) }))
-    .filter(({ timing }) => ['soon', 'upcoming', 'started'].includes(timing.state))
+    .filter(({ timing }) => ['soon', 'upcoming', 'started'].includes(timing.state));
+}
+
+// The coins that want the collector now, at most five: those whose auction has ended with no outcome, then those whose auction is next, soonest first,
+// then (K-01) the open coins with no auction at all, newest first, so a coin saved from the card is never missing from the tab named Watchlist. The coin
+// the popup has just saved (first) leads the list whatever its state. Each is said as a workspace row says a coin (H-16): its reference first, then its
+// title, then when; a coin with no sale says so, and noSale marks it for the row's Add.
+export function coinsToWatch(snapshot, { now = new Date().toISOString(), locale = 'en-US', limit = 5, first = '' } = {}) {
+  const row = (lot, when, noSale = false) => ({ lot, reference: displayReference(lot.reference ?? ''), title: String(lot.title ?? ''), when, ...(noSale ? { noSale } : {}) });
+  const ended = lotsNeedingOutcome(snapshot, now).map((lot) => row(lot, 'ended, record the outcome'));
+  const coming = comingLots(snapshot, now)
     .sort((left, right) => (left.timing.sortMs ?? Infinity) - (right.timing.sortMs ?? Infinity))
     .map(({ lot, event }) => row(lot, eventWhen(event, { now, locale }).relative));
-  return [...ended, ...coming].slice(0, limit);
+  const newest = (lot) => String(lot.createdAt ?? lot.updatedAt ?? '');
+  const unscheduled = (snapshot?.lots ?? [])
+    .filter((lot) => openLot(lot) && !lot.auctionEventId)
+    .sort((left, right) => newest(right).localeCompare(newest(left)))
+    .map((lot) => row(lot, 'no sale date', true));
+  const rows = [...ended, ...coming, ...unscheduled];
+  const saved = first ? (snapshot?.lots ?? []).find((lot) => lot?.id === first) : null;
+  if (!saved) return rows.slice(0, limit);
+  const own = rows.find((entry) => entry.lot.id === first) ?? row(saved, openLot(saved) ? 'just saved' : '');
+  return [own, ...rows.filter((entry) => entry !== own)].slice(0, limit);
+}
+
+// What the Watchlist tab holds, in one line over it (K-01): "3 coins on your watchlist · 1 with a sale coming". Empty for a store with no coin at all,
+// which has its own empty state.
+export function watchlistCountText(snapshot, now = new Date().toISOString()) {
+  const lots = snapshot?.lots ?? [];
+  if (!lots.length) return '';
+  const open = lots.filter(openLot).length;
+  if (!open) return 'No coins on your watchlist';
+  const coming = comingLots(snapshot, now).length;
+  return [`${open} ${open === 1 ? 'coin' : 'coins'} on your watchlist`, coming ? `${coming} with a sale coming` : ''].filter(Boolean).join(' · ');
 }
 
 function openExtensionPage(path) {
@@ -380,6 +431,12 @@ export async function captureCurrentPage(api, call = callExtension, mode = { pan
 }
 
 const STORAGE_UNAVAILABLE = 'Extension storage is unavailable.';
+// X-12: why nothing can be saved, in words, from the reason the store gave: its own "Stored data is invalid: …" is records that cannot be read, and
+// anything else (a blocked or missing storage, a background that never answered) is records the popup cannot reach. The store's own words stay out.
+export function recordsProblem(message) {
+  return /^Stored data is invalid/.test(String(message ?? '')) ? 'Your records can’t be read, so nothing can be saved here.'
+    : 'Giga Pinax can’t reach its records in this browser, so nothing can be saved here.';
+}
 // How long a message stands in a hint line before the line's own words come back.
 const SAID_FOR_MS = 8000;
 // What blocked site data actually costs: the preferences popup.js keeps in localStorage. The watchlist lives in extension storage, reached through the
@@ -511,13 +568,17 @@ async function initCompanionPopup() {
     const ended = lotsNeedingOutcome(snapshot).length;
     $('companion-needs-outcome').hidden = ended === 0;
     $('companion-open-needs-outcome').textContent = `${ended} ${ended === 1 ? 'lot' : 'lots'} ended without an outcome`;
-    const coins = coinsToWatch(snapshot, { now, locale });
-    $('companion-coin-list').replaceChildren(...coins.map(({ lot, reference, title, when }) => {
+    // K-01: what the list holds, over it, and every open coin can be one of its rows.
+    const count = watchlistCountText(snapshot, now);
+    $('companion-count').textContent = count;
+    $('companion-count').hidden = !count;
+    const coins = coinsToWatch(snapshot, { now, locale, first: savedThisSession });
+    $('companion-coin-list').replaceChildren(...coins.map(({ lot, reference, title, when, noSale }) => {
       const item = document.createElement('li');
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'text-button';
-      const parts = [['coin-reference', reference], ['coin-title', title], ['coin-when', when]].filter(([, words]) => words);
+      const parts = [['coin-reference', reference], ['coin-title', title], [noSale ? 'coin-when coin-unscheduled' : 'coin-when', when]].filter(([, words]) => words);
       parts.forEach(([className, words], index) => {
         const part = document.createElement('span');
         part.className = className;
@@ -527,11 +588,26 @@ async function initCompanionPopup() {
       button.disabled = !bridge;
       button.addEventListener('click', () => openLot(lot.id, 'companion-runtime-note'));
       item.append(button);
+      // A coin with no sale is one click from giving it one: Add opens it in the workspace, where its auction is chosen or added.
+      if (noSale) {
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'text-button coin-add';
+        add.textContent = 'Add';
+        add.setAttribute('aria-label', `Add a sale date to ${title || reference || 'this coin'} in the workspace`);
+        add.disabled = !bridge;
+        add.addEventListener('click', () => openLot(lot.id, 'companion-runtime-note'));
+        item.append(add);
+      }
       return item;
     }));
     $('companion-coins').hidden = coins.length === 0;
-    // With no coin saved at all, the tab says how one gets here (H-07); its values below stay as they are.
-    $('companion-empty').hidden = (snapshot.lots ?? []).length > 0;
+    // With no coin saved at all, the tab says how one gets here (H-07); its values below stay as they are. Records that cannot be read are no empty
+    // list (X-12): the tab says so, and where to go.
+    $('companion-empty').hidden = !recordsDown && (snapshot.lots ?? []).length > 0;
+    $('companion-empty-title').textContent = recordsDown ? 'Records unavailable' : 'No coins yet';
+    $('companion-empty-text').textContent = recordsDown || 'Watch a coin from Research, or add one in the workspace.';
+    $('companion-empty-settings').hidden = !recordsDown;
     const held = CURRENCIES.filter((currency) => summary.exposure[currency].hammerMinor > 0 || summary.exposure[currency].bindingCount > 0);
     $('companion-exposure-list').replaceChildren(...(held.length ? held.map((currency) => {
       const item = summary.exposure[currency];
@@ -548,6 +624,16 @@ async function initCompanionPopup() {
     }) : [Object.assign(document.createElement('li'), { className: 'companion-none', textContent: 'No active bids' })]));
   };
 
+  // X-12: the reason nothing can be saved, once the store has refused to be read ('' while it can be). It is said under the card's Watch and in the
+  // Watchlist tab, each time with the way to Settings; the storage note under the capture section keeps to the preferences.
+  let recordsDown = '';
+  const toSettings = (anchor) => void navigate(() => openSettings(), 'Couldn’t open Settings.', anchor);
+  const sayRecordsDown = () => {
+    if (!recordsDown || !safeCard) return;
+    const hint = $('companion-save-hint');
+    fillLine(hint, [recordsDown, { label: 'Open Settings', name: 'Open Settings to see your records', action: () => toSettings('companion-save-hint') }]);
+    hint.classList.toggle('said-error', true);
+  };
   // Every place a save button is put back asks the same question, so a page that cannot save never enables one by a side door.
   const canSave = (payload) => canSaveWatchlist(Boolean(bridge) && !storageUnavailable, payload);
   // The card's status row (H-05) shows while either of its two lines has something to say.
@@ -609,6 +695,8 @@ async function initCompanionPopup() {
   // coin as stored and the auction attached to it, if any.
   let justSaved = null;
   const UNDO_FOR_MS = 10000;
+  // K-01: the coin this popup saved last leads the Watchlist tab's list for as long as the popup is open, whatever its state.
+  let savedThisSession = '';
   // The card says whether its reference is already saved, and then offers that coin rather than a second one: Save gives way to the line.
   const renderCardSaved = () => {
     const line = $('companion-saved-line');
@@ -667,6 +755,7 @@ async function initCompanionPopup() {
     renderCardSaved();
     cardReference = readingOfCard(event.detail);
     renderCardWanted();
+    if (event.detail) sayRecordsDown();
   });
   if (globalThis.gigaPinaxWatchlistReference) {
     safeCard = buildWatchlistDraftPayload(globalThis.gigaPinaxWatchlistReference);
@@ -679,7 +768,13 @@ async function initCompanionPopup() {
 
   const draftSaver = bridge && createDraftSaver({
     newRequestId: bridge.newRequestId,
-    sendCommand: bridge.sendCommand,
+    // X-05: a draft save with no answer within the wait is no answer, and keeps its request for the retry.
+    sendCommand: async (command) => {
+      const reply = await answerWithin(() => bridge.sendCommand(command), SAVE_ANSWER_MS);
+      if (reply !== LATE) return reply;
+      void recordDiagnostic({ area: 'store', code: 'timeout' });
+      return undefined;
+    },
     openDraft: (id) => openExtensionPage(`workspace.html#lot-draft=${encodeURIComponent(id)}`),
   });
   let savePending = false;
@@ -699,7 +794,11 @@ async function initCompanionPopup() {
     savePending = true;
     holdSaveButtons();
     try {
-      const saved = await runVisibleAction(async () => draftSaver(payload), 'Couldn’t save these details to the watchlist.');
+      const answer = await draftSaver(payload);
+      // A background that said nothing (X-11) is recorded as a kind of failure only, and said in words; a refusal says the store's own reason.
+      if (answer?.unanswered) void recordDiagnostic({ area: 'store', code: 'not-saved' });
+      const saved = answer?.unanswered ? { ok: false, message: noAnswerMessage(anchor === 'companion-save-hint' ? 'Watch' : 'Save to watchlist') }
+        : answer?.ok ? { ok: true } : { ok: false, message: answer?.message || answer?.error?.message || 'Couldn’t save these details to the watchlist.' };
       if (!saved.ok) { announce(saved.message, true, anchor); return saved; }
       // Said whenever the size bound took something off the page's values, so nothing goes missing without a word.
       announce(leftOff.length ? `Watchlist details are ready to review. Left off, the draft being at its size bound: ${leftOff.join(', ')}.` : 'Watchlist details are ready to review.',
@@ -718,12 +817,30 @@ async function initCompanionPopup() {
   // One request per coin until the store has answered it: a save whose reply was lost is sent again under the same request, and the store answers it
   // from its ledger rather than saving the coin twice.
   let directRequest = null;
-  const NO_ANSWER = 'The watchlist did not answer. Try again.';
-  const sendDirect = async (command) => {
-    try { return (await bridge.sendCommand(command)) ?? { ok: false, outcome: 'unknown', message: NO_ANSWER }; }
-    catch (error) { return { ok: false, outcome: 'unknown', message: error?.message || NO_ANSWER }; }
+  // X-11: no reply, or an exception from the bridge, is one sentence that names the button to press again; the kind of failure goes to the local
+  // diagnostics, never the browser's words.
+  // X-05: a save waits SAVE_ANSWER_MS for its answer and no longer; it is then said as late, and its request kept for the retry.
+  const LATE_MESSAGE = 'The save didn’t get an answer.';
+  const sendDirect = async (command, button = 'Watch', wait = 0) => {
+    try {
+      const reply = wait ? await answerWithin(() => bridge.sendCommand(command), wait) : await bridge.sendCommand(command);
+      if (reply === LATE) {
+        void recordDiagnostic({ area: 'store', code: 'timeout' });
+        return { ok: false, outcome: 'unknown', late: true, message: `${LATE_MESSAGE} Select ${button} again — the same request is retried, never saved twice.` };
+      }
+      if (reply) return reply;
+    } catch { /* said below, as no answer */ }
+    void recordDiagnostic({ area: 'store', code: 'not-saved' });
+    return { ok: false, outcome: 'unknown', message: noAnswerMessage(button) };
   };
-  const saveDirect = async (payload, anchor) => {
+  // Late, under the card's own button: the sentence and the one verb that gets out, the same request sent again.
+  const sayLate = (anchor, retry) => {
+    const line = $(anchor);
+    speak(LATE_MESSAGE);
+    fillLine(line, [LATE_MESSAGE, { label: 'Retry the same request', name: 'Retry the same request; it is never saved twice', action: retry }]);
+    line.classList.toggle('said-error', true);
+  };
+  const saveDirect = async (payload, anchor, retry = null) => {
     const refuse = (message) => { if (anchor) announce(message, true, anchor); return { ok: false, message }; };
     if (!bridge || storageUnavailable || !payload) return refuse(STORAGE_UNAVAILABLE);
     if (savePending) return refuse(PENDING_MESSAGE);
@@ -734,9 +851,10 @@ async function initCompanionPopup() {
     savePending = true;
     holdSaveButtons();
     try {
-      const reply = await sendDirect({ type: 'lot.save', requestId: directRequest.requestId, expectedRevision: null, lot: built.lot });
+      const reply = await sendDirect({ type: 'lot.save', requestId: directRequest.requestId, expectedRevision: null, lot: built.lot }, 'Watch', SAVE_ANSWER_MS);
       if (!reply.ok) {
         if ((reply.outcome ?? reply.error?.outcome) !== 'unknown') directRequest = null;
+        if (reply.late && anchor && retry) { sayLate(anchor, retry); return { ok: false, late: true, message: reply.message }; }
         return refuse(reply.message || reply.error?.message || 'Couldn’t save this coin to the watchlist.');
       }
       directRequest = null;
@@ -753,11 +871,20 @@ async function initCompanionPopup() {
     if (justSaved !== entry) return;
     clearTimeout(entry.timer);
     const current = (snapshot.lots ?? []).find(({ id }) => id === entry.lot.id) ?? entry.lot;
-    const reply = await sendDirect({ type: 'lot.delete', requestId: bridge.newRequestId(), lotId: entry.lot.id, expectedRevision: current.revision });
-    if (!reply.ok) { announce(reply.message || 'Couldn’t take this coin off the watchlist.', true, anchor); return; }
-    if (entry.event) await sendDirect({ type: 'event.delete', requestId: bridge.newRequestId(), eventId: entry.event.id, expectedRevision: entry.event.revision });
+    // One request per Undo, kept until the store has answered it, so a retry after no answer is the same removal (review M2).
+    entry.undoRequest ??= bridge.newRequestId();
+    const reply = await sendDirect({ type: 'lot.delete', requestId: entry.undoRequest, lotId: entry.lot.id, expectedRevision: current.revision }, 'Undo');
+    if (!reply.ok) {
+      // A refusal the store gave is final for that request; only an answer nobody could read keeps it for the retry.
+      if ((reply.outcome ?? reply.error?.outcome) !== 'unknown') entry.undoRequest = undefined;
+      announce(reply.message || 'Couldn’t take this coin off the watchlist.', true, anchor);
+      return;
+    }
+    if (entry.event) await sendDirect({ type: 'event.delete', requestId: (entry.undoEventRequest ??= bridge.newRequestId()), eventId: entry.event.id, expectedRevision: entry.event.revision }, 'Undo');
     justSaved = null;
     snapshot = { ...snapshot, lots: (snapshot.lots ?? []).filter(({ id }) => id !== entry.lot.id) };
+    if (savedThisSession === entry.lot.id) savedThisSession = '';
+    renderSummary();
     fillLine(line, []);
     announce('Removed from your watchlist.', false, anchor);
     renderCardSaved();
@@ -766,12 +893,15 @@ async function initCompanionPopup() {
   const confirmSaved = (entry, line, anchor, extra = []) => {
     if (justSaved && justSaved !== entry) clearTimeout(justSaved.timer);
     justSaved = entry;
+    savedThisSession = entry.lot.id;
+    renderSummary();
     // What the line under it said of an earlier save (a failure, a removal) is over.
     const hint = $(anchor);
     if (hint && anchor !== 'upcoming-note') { hint.textContent = ''; hint.hidden = true; }
-    const pill = entry.event ? 'Saved with its sale day' : 'Saved';
-    // The line is a status region: it says the save once. "Saved" is its pill, with the sentence as the tooltip.
-    fillLine(line, [{ pill, title: pill.replace('Saved', 'Saved to your watchlist'), kind: 'watch-pill' }, openAction(entry.lot.id, anchor),
+    // K-14: one verb into the workspace. The card's button is Watch, as on an Upcoming lot, and what it made is Watching.
+    const pill = entry.event ? 'Watching with its sale day' : 'Watching';
+    // The line is a status region: it says the save once. "Watching" is its pill, with the sentence as the tooltip.
+    fillLine(line, [{ pill, title: pill.replace('Watching', 'Added to your watchlist'), kind: 'watch-pill' }, openAction(entry.lot.id, anchor),
       { label: 'Undo', name: 'Undo: take this coin off the watchlist', action: () => void undoSave(entry, line, anchor) }, ...extra]);
     entry.timer = setTimeout(() => {
       if (justSaved !== entry) return;
@@ -780,15 +910,16 @@ async function initCompanionPopup() {
       else fillLine(line, [watchingPill('Watching', 'On your watchlist', entry.lot.id, anchor)]);
     }, UNDO_FOR_MS);
   };
-  $('companion-save-watchlist').addEventListener('click', async () => {
+  const watchCard = async () => {
     const payload = safeCard;
     // A card carrying a captured page's values goes to the workspace for review, as before.
     if (!savesDirectly(payload)) { void saveWatchlistDraft(payload); return; }
-    const saved = await saveDirect(payload, 'companion-save-hint');
+    const saved = await saveDirect(payload, 'companion-save-hint', () => { if (safeCard === payload) void watchCard(); });
     if (!saved.ok || safeCard !== payload) return;
     confirmSaved({ where: 'card', lot: saved.lot, event: null, timer: 0 }, $('companion-saved-line'), 'companion-save-hint');
     $('companion-save-watchlist').hidden = true;
-  });
+  };
+  $('companion-save-watchlist').addEventListener('click', () => watchCard());
   // Watch on an upcoming acsearch lot (popup.js): saved in one step with the lot's title, the card's reference and the lot's own acsearch page, said
   // under the list with Open and Undo, and its sale day offered as a date-only auction to attach with Add. Nothing opens by itself. No captured page
   // rides along, since the lot is acsearch's. A failure is handed back, to be shown beside the list Watch was pressed in.
@@ -796,11 +927,11 @@ async function initCompanionPopup() {
     if (justSaved !== entry || entry.event) return;
     clearTimeout(entry.timer);
     entry.offerRequest ??= bridge.newRequestId();
-    const eventReply = await sendDirect({ type: 'event.save', requestId: entry.offerRequest, expectedRevision: null, event: { ...offer, name: entry.lot.title.slice(0, 300) } });
+    const eventReply = await sendDirect({ type: 'event.save', requestId: entry.offerRequest, expectedRevision: null, event: { ...offer, name: entry.lot.title.slice(0, 300) } }, 'Add');
     if (!eventReply.ok) { announce(eventReply.message || 'Couldn’t add the auction.', true, 'upcoming-note'); confirmSaved(entry, line, 'upcoming-note'); return; }
     const values = lotFormValues(entry.lot);
     const lot = buildWorkspaceLotDraft(entry.lot, { ...values, auctionEventId: eventReply.value.id }, values.sourceUrl);
-    const lotReply = await sendDirect({ type: 'lot.save', requestId: bridge.newRequestId(), expectedRevision: entry.lot.revision, lot });
+    const lotReply = await sendDirect({ type: 'lot.save', requestId: bridge.newRequestId(), expectedRevision: entry.lot.revision, lot }, 'Add');
     if (!lotReply.ok) {
       // The auction goes with the attachment that failed, so nothing is left behind that the collector did not see saved.
       await sendDirect({ type: 'event.delete', requestId: bridge.newRequestId(), eventId: eventReply.value.id, expectedRevision: eventReply.value.revision });
@@ -852,6 +983,7 @@ async function initCompanionPopup() {
     $('companion-capture-error').hidden = !message;
     if (message) {
       $('form-error').textContent = message;
+      $('form-error').classList.toggle('form-guide', false);
       $('form-error').hidden = false;
       shownFormError = message;
     } else if (shownFormError && $('form-error').textContent === shownFormError) {
@@ -969,10 +1101,13 @@ async function initCompanionPopup() {
     if (!result.ok) announce(result.message, true, anchor);
   };
   $('companion-open-watchlist').addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the watchlist.', 'companion-runtime-note'));
+  $('companion-empty-settings').addEventListener('click', () => toSettings('companion-runtime-note'));
   $('companion-open-needs-outcome').addEventListener('click', () => void navigate(() => openWorkspace('watchlist', undefined, 'needs-outcome'),
     'Couldn’t open the watchlist.', 'companion-runtime-note'));
   $('open-workspace').addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the workspace.'));
   $('open-settings').addEventListener('click', () => void navigate(() => openSettings(), 'Couldn’t open Settings.'));
+  // K-17: the credit line's link opens Settings at the local catalogue data, where each bundle is credited with its source and licence.
+  $('open-credits')?.addEventListener('click', () => void navigate(() => openSettings('catalogue-data'), 'Couldn’t open Settings.'));
   $('open-panel').addEventListener('click', () => void navigate(() => openResearchPanel(), 'Couldn’t open the research panel.'));
 
   // Set once the snapshot has been read: only then is there a revision to write the currency against.
@@ -1011,10 +1146,16 @@ async function initCompanionPopup() {
       // Said only where it is the whole story: a bridge that cannot save has a graver note of its own, below.
       if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);
     } else {
-      showStorageUnavailable();
-      // Records nothing can read get the recovery notice at the top of the popup (X-02), not a raw sentence.
+      // X-12: the saves go, and why is said where they were, not in the preferences note below the capture section.
+      storageUnavailable = true;
+      for (const id of ['companion-save-watchlist', 'companion-capture-watchlist']) $(id).disabled = true;
+      recordsDown = recordsProblem(reply?.message);
+      // Records nothing can read get the recovery notice under the header (X-02), not a raw sentence.
       const unreadable = reply?.reason === 'unreadable';
-      announce(unreadable ? 'Your records can’t be read. The notice at the top of this window has the ways out.' : reply?.message || STORAGE_UNAVAILABLE, true);
+      speak(unreadable ? 'Your records can’t be read. The notice at the top of this window has the ways out.' : recordsDown);
+      renderSummary();
+      sayRecordsDown();
+      if (preferencesBlocked) showStorageNote(PREFERENCES_UNAVAILABLE);
       if (unreadable) void import('./store-recovery.js').then(({ mountRecovery }) => mountRecovery({ document, bridge, reply, after: document.querySelector('.popup-header') })).catch(() => {});
     }
     snapshotRead();

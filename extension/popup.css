@@ -102,6 +102,7 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .ric-fields.single {grid-template-columns:minmax(0,1fr);}
 .ric-fields select,.ric-fields input {font-size:12px; text-overflow:ellipsis;}
 .form-error {color:var(--error); font-size:12px; line-height:1.5; padding-top:8px;}
+.form-error.form-guide {color:var(--ink);}
 .candidates {padding-top:6px;}
 .source-badge {margin:4px 0;}
 .candidate-source {margin-left:7px; font-weight:500;}
@@ -175,6 +176,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 /* An answer drawn again from the session says its age in the heading, with Refresh, so it takes no line of its own and moves nothing. */
 .prices-restored {margin:0 auto 0 0; font-size:var(--text-meta); color:var(--muted); white-space:nowrap;}
 .prices-restored .text-button {padding:0; font-size:var(--text-meta);}
+/* X-10: Retry sits inside the card's summary line, at its size. */
+.names-retry {padding:0; font-size:inherit;}
 .provider-link:hover {text-decoration:underline;}
 /* The median sits right under the heading; without prices, the note takes its place. */
 .median-block,.prices-note {margin-top:8px;}
@@ -184,6 +187,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .stat-meta {font-size:12px; line-height:1.45; margin-top:4px; font-variant-numeric:tabular-nums;}
 .stat-meta > :not([hidden]) ~ :not([hidden])::before {content:" · "; color:var(--muted); font-weight:400;}
 .stat-meta .sale-filtered,.stat-meta .sale-period {font-size:11px; color:var(--muted);}
+/* K-16: what the median was drawn from is the bracket of its own sentence, "Median of 2 sales citing RIC 306 (5 results, 1 unpriced)". */
+.stat-meta > .sale-period:not([hidden])::before {content:" ";}
 /* Both blocks keep the height they will have while acsearch answers, so its answer moves nothing under them. */
 .median-block {min-height:98px;}
 .prices-panel[data-state="loading"] .median-line strong,.prices-panel[data-state="loading"] .sale-strength {color:var(--muted); font-weight:400;}
@@ -294,13 +299,24 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .secondary-button[disabled] {cursor:progress;}
 /* "Check online" sits under the lookup error it answers. */
 .online-fallback {margin-top:6px;}
+/* X-06: a wait past a few seconds says so, with Cancel beside it. */
+.lookup-wait {margin:0; padding-top:8px; font-size:12px; line-height:1.5; color:var(--muted);}
+.lookup-wait .text-button,.sale-strength .text-button,.prices-error-retry {padding:0 2px; font-size:inherit;}
+/* K-02: free words answered with a search the collector starts, the examples and the spellings the box reads. */
+.free-text {margin-top:6px;}
+.free-text .phrase-search {max-width:100%; min-height:var(--control-h-sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.free-text .example-row {margin-top:8px;}
+.free-text > .field-hint {margin:6px 0 0;}
 .coinarchives-median-line {display:flex; align-items:baseline; gap:5px; margin:2px 0;}
 /* Each provider's median is the one figure of its panel, drawn alike. */
 .coinarchives-median-line strong {font-family:var(--font-serif); font-size:var(--text-figure); line-height:1.1; letter-spacing:-.01em; font-weight:500; color:var(--ink); font-variant-numeric:lining-nums tabular-nums;}
 #coinarchives-median-currency {font-size:12px; font-weight:600; color:var(--muted);}
-.popup-footer {padding:8px 16px; min-height:40px; font-size:11px; color:var(--muted); border-top:1px solid var(--gold-line); display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; background:var(--bg);}
-.popup-footer a {text-decoration:none; padding:4px 0; white-space:nowrap;}
-.popup-footer a:hover {text-decoration:underline;}
+/* K-17: the type data's credit is one muted line at the foot of the scroll, never a bar fixed under every screen; Settings keeps the full credits. */
+.credit-line {margin:12px 16px 16px; font-size:var(--text-meta); line-height:1.5; color:var(--muted);}
+.credit-line .text-button {padding:0; font-size:inherit; font-weight:400; color:var(--muted); text-decoration:underline;}
+.credit-line .text-button:hover {color:var(--accent);}
+/* K-12: the one way to the tour, first on the line. */
+.credit-line a {white-space:nowrap;}
 .lookup-prompt,.storage-note {font-size:12px; line-height:1.5; padding:12px 16px; color:var(--muted);}
 .storage-note {color:var(--error);}
 .sr-only {position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0;}
@@ -315,7 +331,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
   .median-block {min-height:115px;}
 }
 @media (max-width:359px) {
-  .popup-header,.quick-search,.reference-body,.popup-footer,.storage-note {padding-left:12px; padding-right:12px;}
+  .popup-header,.quick-search,.reference-body,.storage-note {padding-left:12px; padding-right:12px;}
+  .credit-line {margin-left:12px; margin-right:12px;}
   .quick-row > label,.quick-row > .field-hint,.quick-row > .lookup-prompt,.first-run,.recent {margin-left:12px; margin-right:12px;}
   .result {margin-left:12px; margin-right:12px; padding:12px;}
   .primary-button {padding:0 10px;}

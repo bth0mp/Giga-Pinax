@@ -180,9 +180,13 @@ export function searchCategory(reference) {
 // number's own parenthetical ("266 (aureus)") is the word OCRE tells two types apart by and stays as a plain word too: acsearch finds nothing for a
 // phrase holding a bracket. The number itself must sit next to a RIC key, so the volume numeral goes inside the phrases, without the edition mark
 // dealers leave out ("RIC I²" is cited "RIC I"); with no volume there is only one phrase to offer.
+// X-04: an edition remark kept on a RIC number ("306 (1st ed.)", "(1. Aufl.)") is a note on the book, which no dealer writes into his lot title: it is
+// no word of the search.
+const EDITION_ASIDE = /^(?:\d+(?:st|nd|rd|th)\s+eds?\.?|(?:first|second)\s+edition|\d\.\s*Aufl(?:\.|age)?|\d(?:re|ère|er|e|ème)\s+[ée]d\.?)$/i;
 function ricTerm({ number, section, volume, rulers }) {
   const people = Array.isArray(rulers) && rulers.length === 1 ? canonicalRicPerson(rulers[0]) : '';
-  const [, digits = '', aside = ''] = /^(\S*)(?:\s*\(([^)]*)\))?$/.exec(squash(number)) ?? [];
+  const [, digits = '', remark = ''] = /^(\S*)(?:\s*\(([^)]*)\))?$/.exec(squash(number)) ?? [];
+  const aside = EDITION_ASIDE.test(squash(remark)) ? '' : remark;
   const numeral = /^[IVX]+/.exec(squash(volume))?.[0] ?? '';
   const keyed = digits ? group([phrase('RIC', digits), ...(numeral ? [phrase('RIC', numeral, digits), phrase(`RIC ${numeral},`, digits)] : [])]) : 'RIC';
   return squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${aside} ${keyed}`);
@@ -1011,11 +1015,15 @@ export async function boundedText(response, maxBytes, { fatal = true } = {}) {
 // The most of an acsearch reply read at all: twice the results text extractLots reads, and several times a real result page.
 export const ACSEARCH_MAX_BYTES = 4 * 1024 * 1024;
 
+// X-06: signal is the collector's Cancel. A search the deadline stopped is "timeout" and one he cancelled "cancelled": neither is a failed connection.
 export async function fetchPrices({ term, currency, category }, options = {}) {
-  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, now = new Date(), maxBytes = ACSEARCH_MAX_BYTES } = options;
+  const { fetchImpl = fetch, timeoutMs = TIMEOUT_MS, now = new Date(), maxBytes = ACSEARCH_MAX_BYTES, signal: cancel } = options;
+  const deadline = AbortSignal.timeout(timeoutMs);
   try {
-    const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal: AbortSignal.timeout(timeoutMs), credentials: 'include', cache: 'no-store' });
-    if (!response.ok) { void recordFetchFailure('acsearch', response); return { status: 'network' }; }
+    const signal = cancel ? AbortSignal.any([deadline, cancel]) : deadline;
+    const response = await fetchImpl(buildSearchUrl({ term, currency, category }), { signal, credentials: 'include', cache: 'no-store' });
+    // A 5xx is acsearch answering with an error, not a connection that failed (review M4b).
+    if (!response.ok) { void recordFetchFailure('acsearch', response); return response.status >= 500 && response.status <= 599 ? { status: 'unavailable', httpStatus: response.status } : { status: 'network' }; }
     let html;
     try { html = await boundedText(response, maxBytes, { fatal: false }); }
     catch (error) { if (error?.message === 'too-large') { void recordFetchFailure('acsearch', error, { bytes: maxBytes }); return { status: 'network', reason: 'too-large' }; } throw error; }
@@ -1029,10 +1037,15 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
     const summary = summarise(page, currency, now);
     // A page without a counted price still lists the lots not sold yet, so its lots come back with it for the Upcoming list.
     if (summary.count === 0 && signedOutPage(html, page, now)) return { status: 'signed-out', lots: page };
-    if (summary.count === 0) return { status: 'unpriced', term, ...(summary.uncounted.length ? { examples: summary.uncounted } : {}), lots: page };
+    // X-17: a page whose every price is acsearch's "*" is one whose prices are hidden, whatever else it says: the popup says so, rather than "no
+    // hammer prices", without claiming the collector is signed out.
+    const hidden = page.every((entry) => String(entry.price).trim() === '*');
+    if (summary.count === 0) return { status: 'unpriced', term, ...(summary.uncounted.length ? { examples: summary.uncounted } : {}), ...(hidden ? { hidden } : {}), lots: page };
     // The page's lots stay with the result, in memory only, so the popup draws a period from them without another request.
     return { status: 'ok', summary, lots: page };
   } catch (error) {
+    if (cancel?.aborted) return { status: 'cancelled' };
+    if (deadline.aborted) { void recordFetchFailure('acsearch', deadline.reason ?? error); return { status: 'timeout' }; }
     void recordFetchFailure('acsearch', error);
     return { status: 'network' };
   }

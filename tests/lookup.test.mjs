@@ -214,13 +214,14 @@ test('lookupType reports candidates, none, network and timeout outcomes', async 
   assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: fakeFetch({}) }), { status: 'network' });
 
   const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
-  assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'network' });
+  // Loop 6 (X-06): the deadline is a timeout, never a failed connection.
+  assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hang, timeoutMs: 20 }), { status: 'timeout' });
 
   const search = fakeFetch({ 'pella/apis/search': fixture('pella-search-price-23.xml') });
   const hangRecord = (url, init) => (url.includes('.jsonld') ? hang(url, init) : search(url, init));
   assert.deepEqual(
     await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hangRecord, cache: new Map(), timeoutMs: 20 }),
-    { status: 'network' },
+    { status: 'timeout' },
   );
 });
 
@@ -370,7 +371,7 @@ test('the plain-search fallback shares the lookup deadline', { timeout: 5000 }, 
     if (url.includes('?q=%22')) return Promise.resolve({ ok: true, status: 200, text: async () => '<feed></feed>' });
     return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
   };
-  assert.deepEqual(await lookupType({ catalogue: 'RRC', number: '44/5a' }, { fetchImpl, timeoutMs: 30 }), { status: 'network' });
+  assert.deepEqual(await lookupType({ catalogue: 'RRC', number: '44/5a' }, { fetchImpl, timeoutMs: 30 }), { status: 'timeout' });
   assert.equal(signals.length, 2);
   assert.equal(signals[0], signals[1]);
 });
@@ -1011,9 +1012,9 @@ test('Bop lookups distinguish an unavailable search from failed or timed-out ver
   const search = fakeFetch(BIGR_ROUTES);
   const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
   const hangGroup = (url, init) => (url.includes('/apis/getNuds') ? hang(url, init) : search(url, init));
-  assert.deepEqual(await lookupType(euthydemus, { fetchImpl: hangGroup, timeoutMs: 20 }), { status: 'network' });
+  assert.deepEqual(await lookupType(euthydemus, { fetchImpl: hangGroup, timeoutMs: 20 }), { status: 'timeout' });
   const hangXml = (url, init) => (url.endsWith('.xml') ? hang(url, init) : search(url, init));
-  assert.deepEqual(await lookupById('bigr', 'bigr.euthydemus_i.13.1', { fetchImpl: hangXml, cache: new Map(), timeoutMs: 20 }), { status: 'network' });
+  assert.deepEqual(await lookupById('bigr', 'bigr.euthydemus_i.13.1', { fetchImpl: hangXml, cache: new Map(), timeoutMs: 20 }), { status: 'timeout' });
   // No hits, nothing to verify: no request, and the miss is reported as one.
   const empty = fakeFetch({ 'bigr/apis/search': '<feed></feed>' });
   assert.deepEqual(await lookupType({ catalogue: 'Bop', section: '', number: '9D' }, { fetchImpl: empty }), { status: 'none', corpus: 'bigr', query: 'Bopearachchi 9D' });
@@ -1731,4 +1732,165 @@ test('parseReference carries a second-edition mark onto RIC I, II.1 and II.3, an
   assert.deepEqual(parseReference('Price 23 (1st ed.)'), { catalogue: 'Price', number: '23', volume: '', section: '' });
   assert.notEqual(parseReference('RIC 3062. Aufl.')?.number, '306');
   assert.notEqual(parseReference('RIC II.3 3062.Aufl.')?.number, '306');
+});
+
+// Loop 6 (K-03): no keyboard has a "²" key, and a ruler written after the number is the order every American house writes. Both read exactly as the
+// spelling the reader already knew; nothing else is read, and every negative below stays as it was.
+test('parseReference reads I2, I^2 and I2nd as I², and a ruler or mint after the number as the section', () => {
+  const nero = { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' };
+  for (const text of ['RIC I2 Nero 306', 'RIC I^2 Nero 306', 'RIC I ^2 Nero 306', 'RIC I2nd Nero 306', 'RIC I 2nd Nero 306', 'ric i2 Nero 306', 'RIC vol. I2 Nero 306']) {
+    assert.deepEqual(parseReference(text), nero, text);
+  }
+  // The edition group keeps what it read: "2nd ed." and "2nd edition" are not rewritten into a stray section.
+  assert.deepEqual(parseReference('RIC I 2nd ed. Nero 306'), nero);
+  assert.deepEqual(parseReference('RIC I 2nd edition Nero 306'), nero);
+  assert.equal(parseReference('RIC II.3^2 Hadrian 12').volume, 'II, Part 3 (2nd edition)');
+  assert.deepEqual(parseReference('RIC I2 306'), { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: '' });
+  // Only volume I reads a glued 2: "V2" or "II2" could be a part or a number, and stay unread.
+  assert.equal(parseReference('RIC II2 Hadrian 12'), null);
+  assert.equal(parseReference('RIC V2 Probus 157'), null);
+  assert.equal(parseReference('RIC I22 Nero 306'), null);
+
+  for (const [text, reading] of [
+    ['RIC 306 Nero', { catalogue: 'RIC', number: '306', volume: '', section: 'Nero' }],
+    ['RIC 306 nero', { catalogue: 'RIC', number: '306', volume: '', section: 'nero' }],
+    ['Ric 306 Nero', { catalogue: 'RIC', number: '306', volume: '', section: 'Nero' }],
+    ['RIC 306, Nero', { catalogue: 'RIC', number: '306', volume: '', section: 'Nero' }],
+    ['RIC II 253 Trajan', { catalogue: 'RIC', number: '253', volume: 'II', section: 'Trajan' }],
+    ['RIC I² 306 Nero', { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' }],
+    ['RIC X 602 Leo I (East)', { catalogue: 'RIC', number: '602', volume: 'X', section: 'Leo I (East)' }],
+    ['RIC 12 Trier', { catalogue: 'RIC', number: '12', volume: '', section: 'Trier' }],
+  ]) {
+    assert.deepEqual(parseReference(text), reading, text);
+    assert.deepEqual(parseReference(text), parseReference(text.replace(/^(RIC(?: [IVX²]+)?|Ric) (\S+?),? (.+)$/i, '$1 $3 $2')), `${text} reads as the name before the number`);
+  }
+  // Negatives: words no table knows, a name with more words behind it, a name with a number in it, a section already before the number, a name
+  // that is only half a section, and a key that is not RIC.
+  for (const text of ['RIC 306 hello', 'RIC 306 Nero Rome', 'RIC 306 Nero as Caesar', 'RIC 5 Salonina (2)', 'RIC II Hadrian 253 Trajan',
+    'RIC 306 var', 'RIC 306 Good VF', 'Cohen 306 Nero', 'RIC 306 3.21 g', 'RIC 306 (Nero) Galba']) {
+    const read = parseReference(text);
+    assert.ok(!read || read.catalogue !== 'RIC' || read.section !== 'Nero' || text === 'RIC 306 (Nero) Galba', text);
+    assert.notEqual(read?.section, 'Trajan', text);
+  }
+  assert.equal(parseReference('RIC 306 hello'), null);
+  assert.equal(parseReference('RIC 306 Nero as Caesar'), null);
+  assert.equal(parseReference('RIC II Hadrian 253 Trajan'), null);
+});
+
+// Loop 6 (K-02): text that sets out to be a catalogue reference is a misspelt one; free words a collector types to find a coin are not.
+test('namesCatalogue tells a misspelt reference from free words', async () => {
+  const { namesCatalogue } = await import('../extension/lookup.js');
+  for (const text of ['RIC XI Nero 1', 'Crawfrd 44/5', 'Price', 'Bopearachi 9C', 'cf. RIC 972', 'Seleucid Coins']) assert.equal(namesCatalogue(text), true, text);
+  for (const text of ['Nero', 'nero denarius', 'Athens tetradrachm', 'Ricci', 'owl tetradrachm', 'Alexander the Great']) assert.equal(namesCatalogue(text), false, text);
+});
+
+// Loop 6 (X-10): with numismatics.org answering and nomisma.org down, a Bopearachchi card printed "euthydemus_i_bactria · denomination_d_sco · ae"
+// as its names. A name nomisma.org did not answer for is left empty and listed as unnamed; a retry asks for those alone; a concept it answered for
+// without an English name still shows its identifier, as before.
+test('a card never prints an identifier nomisma.org did not answer for, and a retry asks for those names alone', async () => {
+  const routes = {
+    'bigr/id/bigr.euthydemus_i.13.1.jsonld': fixture('bigr-euthydemus-i-13-1.jsonld'),
+    'bigr/id/bigr.euthydemus_i.13.1.xml': fixture('bigr-euthydemus-i-13-1.xml'),
+  };
+  const down = async (url, options) => {
+    if (url.includes('nomisma.org')) throw Object.assign(new Error('HTTP 503'), { status: 503 });
+    return fakeFetch(routes)(url, options);
+  };
+  const found = await lookupById('bigr', 'bigr.euthydemus_i.13.1', { fetchImpl: down });
+  assert.equal(found.status, 'ok');
+  const { card } = found;
+  const slots = ['authority', 'denomination', 'mint', 'material'];
+  for (const slot of slots) assert.doesNotMatch(String(card[slot] ?? ''), /_|^ae$|^ar$/, slot);
+  assert.ok(card.unnamed.length >= 2);
+  for (const { field, slug } of card.unnamed) {
+    assert.ok(slots.includes(field));
+    assert.equal(card[field], null, field);
+    assert.match(slug, /^[a-z0-9_]+$/);
+  }
+  // The retry asks nomisma.org for the unnamed slugs and nothing else; with it answering, every slot is named and nothing is left unnamed.
+  const asked = [];
+  const { nameCard } = await import('../extension/lookup.js');
+  const named = await nameCard(card, { fetchImpl: async (url) => {
+    asked.push(url);
+    const slug = url.split('/').pop().replace('.jsonld', '');
+    return { ok: true, status: 200, text: async () => JSON.stringify({ '@graph': [{ '@id': `nm:${slug}`, 'skos:prefLabel': [{ '@language': 'en', '@value': `Name of ${slug}` }] }] }) };
+  } });
+  assert.deepEqual(asked.sort(), card.unnamed.map(({ slug }) => `https://nomisma.org/id/${slug}.jsonld`).sort());
+  assert.equal(Object.hasOwn(named, 'unnamed'), false);
+  for (const { field, slug } of card.unnamed) assert.equal(named[field], `Name of ${slug}`);
+  // Still down: the card keeps what it had, and says the same slots are unnamed.
+  const again = await nameCard(card, { fetchImpl: down });
+  assert.deepEqual(again.unnamed, card.unnamed);
+  assert.equal(await nameCard(named), named, 'nothing to ask for, no request');
+  // Answered without an English name (404): the identifier, as before.
+  assert.equal(toCard(json('pella-price-23.jsonld'), 'pella', {}, []).authority, 'alexander_iii');
+  const unreachable = [];
+  assert.deepEqual(await resolveLabels(['nero', 'gone'], { fetchImpl: async (url) => (url.includes('nero') ? { ok: true, status: 200, text: async () => fixture('nomisma-nero.jsonld') }
+    : { ok: false, status: 404, text: async () => '' }), unreachable }), { nero: 'Nero' });
+  assert.deepEqual(unreachable, []);
+});
+
+// Loop 6 (X-04): a first edition's number is answered before any request, since neither the bundle nor OCRE holds RIC I, II.1 or II.3 in that edition;
+// a failure after the bundle said "none" carries that answer with it.
+test('a first-edition RIC citation is answered before any request, and a failed look online keeps what the bundle said', async () => {
+  const { firstEditionCitation } = await import('../extension/lookup.js');
+  const read = (text, extra = {}) => firstEditionCitation({ ...parseReference(text), ...extra });
+  assert.deepEqual(read('RIC I 306 (1st ed.)'), { number: '306', volume: 'I (2nd edition)', book: 'RIC I' });
+  assert.deepEqual(read('RIC 306 (1. Aufl.)', { rulers: ['Nero'] }), { number: '306', volume: 'I (2nd edition)', book: 'RIC I' });
+  assert.deepEqual(read('RIC II.3 2140 (1st ed.)'), { number: '2140', volume: 'II, Part 3 (2nd edition)', book: 'RIC II.3' });
+  assert.deepEqual(read('RIC 306 (1st ed.)'), { number: '306', volume: '', book: '' });
+  // Not a first edition's number the bundle cannot hold: the second edition, a volume held in its 1926 book too, a volume with one edition only,
+  // no mark at all, another catalogue.
+  for (const text of ['RIC I 306 (2nd ed.)', 'RIC II 306 (1st ed.)', 'RIC IV 306 (1st ed.)', 'RIC I 306', 'Price 23 (1st ed.)']) assert.equal(read(text), null, text);
+  const refused = async () => { throw new Error('no request may be made'); };
+  const result = await lookupType(parseReference('RIC I 306 (1st ed.)'), { fetchImpl: refused });
+  assert.equal(result.status, 'first-edition');
+  assert.equal(result.book, 'RIC I');
+
+  const none = { lookupType: async () => ({ status: 'none' }) };
+  const offline = await lookupType(parseReference('RIC I² Nero 9999'), { localProvider: none, fetchImpl: async () => { throw new TypeError('offline'); } });
+  assert.deepEqual(offline, { status: 'network', localStatus: 'none' });
+});
+
+// Loop 6 (X-06): a lookup the collector cancels stops its request and answers "cancelled", never a failed connection.
+test('lookupType and lookupById stop on the caller\'s cancel signal', async () => {
+  const hang = (url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
+  const stop = new AbortController();
+  const pending = lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hang, timeoutMs: 5000, cancel: stop.signal });
+  stop.abort();
+  assert.deepEqual(await pending, { status: 'cancelled' });
+  const byId = new AbortController();
+  const card = lookupById('pella', 'price.23', { fetchImpl: hang, timeoutMs: 5000, cancel: byId.signal });
+  byId.abort();
+  assert.deepEqual(await card, { status: 'cancelled' });
+  // Real fetch rejects with the signal's own reason: the deadline's is a TimeoutError.
+  assert.deepEqual(await lookupType({ catalogue: 'Price', number: '23' }, { fetchImpl: hang, timeoutMs: 10 }), { status: 'timeout' });
+});
+
+// Loop 6 fix round (review I1): a Cancel or the deadline that lands while the names are being asked of nomisma.org stops the lookup; it never
+// draws the card with every name "unavailable".
+test('a cancel or the deadline during the names stops the lookup rather than drawing an unnamed card', async () => {
+  const record = fakeFetch({ 'ocre/id/ric.1(2).ner.306.jsonld': fixture('ocre-nero-306.jsonld') });
+  const hangingNames = (url, init = {}) => (url.includes('nomisma.org')
+    ? new Promise((_, reject) => init.signal?.addEventListener('abort', () => reject(init.signal.reason)))
+    : record(url, init));
+  const stop = new AbortController();
+  const pending = lookupById('ocre', 'ric.1(2).ner.306', { fetchImpl: hangingNames, cache: new Map(), timeoutMs: 5000, cancel: stop.signal });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  stop.abort();
+  assert.deepEqual(await pending, { status: 'cancelled' });
+  assert.deepEqual(await lookupById('ocre', 'ric.1(2).ner.306', { fetchImpl: hangingNames, cache: new Map(), timeoutMs: 30 }), { status: 'timeout' });
+});
+
+// Loop 6 fix round (lead, review M4), online as in the bundle: a heading names the man on the coin. Vespasian's 972 portrays Titus as Caesar, so a
+// Vespasian heading is offered it with the reason, and a Titus heading opens it.
+test('online, a heading that names the authority but not the portrait is offered the coin with the reason', async () => {
+  const titus = JSON.stringify({ '@graph': [{ '@id': 'nm:titus', 'skos:prefLabel': [{ '@value': 'Titus', '@language': 'en' }] }] });
+  const vespasian = JSON.stringify({ '@graph': [{ '@id': 'nm:vespasian', 'skos:prefLabel': [{ '@value': 'Vespasian', '@language': 'en' }] }] });
+  const routes = { 'ocre/apis/search': fixture('ocre-search-titus-972.xml'), 'ocre/id/ric.2_1(2).ves.972.jsonld': fixture('ocre-vespasian-972.jsonld'),
+    'nomisma.org/id/titus.jsonld': titus, 'nomisma.org/id/vespasian.jsonld': vespasian };
+  const offered = await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Vespasian'] }, { fetchImpl: fakeFetch(routes), cache: new Map() });
+  assert.equal(offered.status, 'candidates');
+  assert.deepEqual(offered.candidates.map(({ id, note }) => [id, note]), [['ric.2_1(2).ves.972', "filed under Vespasian; OCRE\'s obverse portrait: Titus"]]);
+  assert.equal((await lookupType({ catalogue: 'RIC', volume: '', section: '', number: '972', rulers: ['Titus'] }, { fetchImpl: fakeFetch(routes), cache: new Map() })).card?.id, 'ric.2_1(2).ves.972');
 });

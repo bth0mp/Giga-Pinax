@@ -851,9 +851,10 @@ test('a result that does not cite the reference is left out of the median and co
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.match(popup.element('median-amount').textContent, /100/);
-  assert.equal(popup.element('cited-count').hidden, false);
-  // The line names the reference, and its figures are the ones the median beside it rests on.
-  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23');
+  // Loop 6 (K-16): the median's own sentence names what it rests on, and what it was drawn from is its bracket; the filter's line is folded in.
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing Price 23, \d{4}(?:–\d{4})?$/);
+  assert.equal(popup.element('sale-period').textContent, '(2 results)');
+  assert.equal(popup.element('cited-count').hidden, true);
   assert.equal(popup.element('curation-count').textContent, '1 included · 1 excluded');
   assert.match(popup.element('announcement').textContent, /1 of 2 results cite Price 23/);
   const toggle = popup.element('sale-list').children[1].children[2];
@@ -861,12 +862,15 @@ test('a result that does not cite the reference is left out of the median and co
   await toggle.emit('click');
   assert.match(popup.element('median-amount').textContent, /200/);
   // Both sales are counted now, but only one of them cites the reference, and the line says so (fix round 1 of the 0.33 review).
+  assert.equal(popup.element('cited-count').hidden, false);
   assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23; 2 of 2 counted');
+  assert.match(popup.element('sale-strength').textContent, /^Median of 2 sales, \d{4}(?:–\d{4})?$/);
   // The redrawn row keeps the keyboard where it was.
   assert.equal(popup.element('sale-list').children[1].children[2].focused, 1);
   await popup.element('reset-curation').emit('click');
   assert.match(popup.element('median-amount').textContent, /100/);
-  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23');
+  assert.equal(popup.element('cited-count').hidden, true);
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing Price 23, \d{4}(?:–\d{4})?$/);
 });
 
 // 0.32 review: a filter a collector can neither see nor switch off is a median he cannot check.
@@ -920,7 +924,7 @@ test('a typed term that names the ruler inside the citation keeps the filter on'
   await settle();
   assert.equal(popup.element('citing-row').hidden, false);
   assert.match(popup.element('median-amount').textContent, /100/);
-  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite RIC 306');
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing RIC 306, \d{4}(?:–\d{4})?$/);
 });
 
 // A page of descriptions the filter cannot read (a provider that returns none, a layout it no longer knows) would otherwise empty the median.
@@ -960,7 +964,7 @@ test('the page’s cap is reported even when the filters drop most of it', async
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.match(popup.element('price-note').textContent, /acsearch returns the 100 most recent sales/);
-  assert.match(popup.element('sale-period').textContent, /^100\+ matches on acsearch/);
+  assert.match(popup.element('sale-period').textContent, /^\(100\+ results\)$/);
 });
 
 // Reset undoes the collector's own decisions only, so it is offered as the way back only where it would bring a sale back.
@@ -1007,7 +1011,7 @@ test('the denomination toggle is offered by the verified card and filters on its
   popup.element('denomination-filter').checked = true;
   await popup.element('denomination-filter').emit('change');
   assert.match(popup.element('median-amount').textContent, /100/);
-  assert.match(popup.element('cited-count').textContent, /1 of 2 results name “tetradrachm”/);
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing Price 23\ and\ naming\ “tetradrachm”, \d{4}(?:–\d{4})?$/);
   popup.element('denomination-filter').checked = false;
   await popup.element('denomination-filter').emit('change');
   assert.match(popup.element('median-amount').textContent, /200/);
@@ -1130,8 +1134,9 @@ test('a period without a citing row is explained, not counted whole', async () =
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  // The N of M line counts the period's own rows, so a page-wide count cannot stand in for it.
-  assert.equal(popup.element('cited-count').textContent, '3 of 5 results cite Price 23');
+  // The N of M line counts the period's own rows, so a page-wide count cannot stand in for it. Loop 6 (K-16): folded into the median's sentence.
+  assert.match(popup.element('sale-strength').textContent, /^Median of 3 sales citing Price 23, \d{4}(?:–\d{4})?$/);
+  assert.equal(popup.element('sale-period').textContent, '(5 results)');
   assert.match(popup.element('median-amount').textContent, /300/);
   await popup.element('period').emit('change', { target: { value: '2y' } });
   assert.equal(popup.element('cited-count').textContent, '0 of 2 results cite Price 23');
@@ -1151,7 +1156,8 @@ test('a row excluded by hand is no longer counted as a citation', async () => {
   await toggle().emit('click');
   assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23; 2 of 2 counted');
   await toggle().emit('click');
-  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23');
+  assert.equal(popup.element('cited-count').hidden, true);
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing Price 23, \d{4}(?:–\d{4})?$/);
   assert.equal(popup.element('curation-count').textContent, '1 included · 1 excluded');
 });
 
@@ -1490,7 +1496,8 @@ test('a bare RIC number with a single type prices the type that was found', asyn
   await settle();
   assert.deepEqual(fetched, ['Caracalla ("RIC 237" "RIC IV 237" "RIC IV, 237")']);
   assert.equal(popup.element('prices-panel').hidden, false);
-  assert.equal(popup.element('cited-count').textContent, '1 of 3 results cite RIC 237');
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing RIC 237, \d{4}(?:–\d{4})?$/);
+  assert.equal(popup.element('sale-period').textContent, '(3 results)');
 });
 
 // 0.33 review, fix round 1: a bare RIC number starts no price research, so a failed Check online had no auction search below to offer and said
@@ -1572,7 +1579,7 @@ test('a row included by hand is counted, not said to cite the reference', async 
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.equal(popup.element('cited-count').textContent, '1 of 3 results cite Price 23');
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing Price 23, \d{4}(?:–\d{4})?$/);
   await popup.element('sale-list').children[1].children[2].emit('click');
   const line = '1 of 3 results cite Price 23; 2 of 3 counted';
   assert.equal(popup.element('cited-count').textContent, line);
@@ -1613,9 +1620,9 @@ test('the matches line adds "+" only where the page may not hold the whole perio
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.match(popup.element('sale-period').textContent, /^100\+ matches on acsearch$/);
+  assert.equal(popup.element('sale-period').textContent, '(100+ results)');
   await popup.element('period').emit('change', { target: { value: '5y' } });
-  assert.match(popup.element('sale-period').textContent, /^50 matches on acsearch$/);
+  assert.equal(popup.element('sale-period').textContent, '(50 results)');
   // A full page every lot of which falls inside the period may be followed by more of them.
   const recent = lots.map((entry, index) => ({ ...entry, date: daysAgo(30 + index) }));
   const again = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots: recent }) });
@@ -1623,7 +1630,7 @@ test('the matches line adds "+" only where the page may not hold the whole perio
   await again.element('reference-form').emit('submit');
   await settle();
   await again.element('period').emit('change', { target: { value: '5y' } });
-  assert.match(again.element('sale-period').textContent, /^100\+ matches on acsearch$/);
+  assert.equal(again.element('sale-period').textContent, '(100+ results)');
 });
 
 // 0.33 review (P10): "Check online" carried a class no stylesheet the popup loads defines, so it drew as the browser's bare default button.
@@ -2203,12 +2210,13 @@ test('the acsearch panel reads as one stat block with one basis line', async () 
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.equal(popup.element('sale-strength').textContent, '3 sales · 2025');
+  // Loop 6 (K-16): one sentence, "Median of 3 sales citing Price 23, 2025 (4 results) · last $300, 1 Jun 2025"; no second line of counts.
+  assert.equal(popup.element('sale-strength').textContent, 'Median of 3 sales citing Price 23, 2025');
+  assert.equal(popup.element('sale-period').textContent, '(4 results)');
   const last = popup.element('last-sale').children;
-  assert.equal(last[0], 'last $300 on ');
+  assert.equal(last[0], 'last $300, ');
   assert.equal(last[1].textContent, '1 Jun 2025');
-  assert.equal(popup.element('cited-count').textContent, '3 of 4 results cite Price 23');
-  assert.equal(popup.element('sale-period').textContent, '4 matches on acsearch');
+  assert.equal(popup.element('cited-count').hidden, true);
   assert.equal(popup.element('range-all').textContent, 'all $220–$380');
   // Three sales in one year draw no strip, so the basis line says nothing about one.
   assert.equal(popup.element('price-note').textContent, 'Hammer only, no premium, tax or shipping');
@@ -2271,14 +2279,18 @@ test('before the first lookup, example chips look up on a click, and they go onc
   for (const example of chips.map((chip) => chip.textContent)) assert.ok(lookup.parseReference(example), example);
 });
 
-// Loop 1 (P-03): the footer's credit took two lines and dropped the arrow of "acsearch ↗" under the word at every width. The credit keeps every
-// corpus it names (tests/pco-agco.test.mjs) but loses its "Type data:" prefix, so it fits one line in the 400 px popup, and the link never breaks.
-test('the footer credit fits the popup on one line, and the acsearch link never breaks', () => {
-  const html = readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8');
-  const footer = html.slice(html.indexOf('<footer class="popup-footer">'), html.indexOf('</footer>'));
-  assert.match(footer, /<span>ANS OCRE, PELLA, CRRO, SCO, PCO, AGCO &amp; BIGR \(ODbL\)<\/span>/);
+// Loop 6 (K-17): the fixed footer was 30 px of seven acronyms under every screen of the 600 px popup, and its acsearch link repeated the Sources menu.
+// The credit is one muted line at the foot of the scroll: the ANS and the licence in words, every corpus in its tooltip (tests/pco-agco.test.mjs),
+// and a link to Settings' full credits.
+test('the type data is credited in one line at the foot of the scroll, not in a fixed footer', () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.equal(markup.querySelectorAll('footer').length, 0);
+  const line = markup.getElementById('credit-line');
+  assert.ok(line.closest('.popup-scroll'), 'the line scrolls with the answer');
+  assert.equal(line.textContent.replace(/\s+/g, ' ').trim(), 'How it works ↗ · Type data from the ANS (ODbL) · full credits in Settings');
+  assert.equal(markup.getElementById('open-credits').tagName.toLowerCase(), 'button');
   const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
-  assert.match(css, /\.popup-footer a \{[^}]*white-space:nowrap/);
+  assert.doesNotMatch(css, /popup-footer/);
 });
 
 // Loop 1 (P-06): "RIC 237" listed 47 types flat, each ending in the same "Local catalogue" badge, inside the open Refine form. The list now stands
@@ -2446,12 +2458,17 @@ test('Change search never wraps; the stat lines wrap inside a held height; the t
 });
 
 test('each stat line carries its whole text as a tooltip, since a narrow panel may cut it', async () => {
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => mixedSales });
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => mixedSales });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.equal(popup.element('stat-sales').title, `${popup.element('sale-strength').textContent} · ${popup.element('last-sale').children.map((part) => part.textContent ?? part).join('')}`);
-  assert.equal(popup.element('stat-counts').title, `${popup.element('cited-count').textContent} · ${popup.element('sale-period').textContent}`);
+  assert.equal(popup.element('stat-sales').title,
+    `${popup.element('sale-strength').textContent} ${popup.element('sale-period').textContent} · ${popup.element('last-sale').children.map((part) => part.textContent ?? part).join('')}`);
+  assert.equal(popup.element('stat-sales').title, 'Median of 1 sale citing Price 23, 2025 (2 results) · last $100, 1 Jan 2025');
+  // A line the collector's own decisions leave beside the sentence carries its whole text too.
+  await popup.element('sale-list').children[1].children[2].emit('click');
+  assert.equal(popup.element('stat-counts').title, popup.element('cited-count').textContent);
+  assert.equal(popup.element('stat-counts').title, '1 of 2 results cite Price 23; 2 of 2 counted');
 });
 
 test('the Reference box is described only by its error line', () => {
@@ -2488,7 +2505,7 @@ test('the coverage line names future-dated lots apart from uncounted prices', as
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.equal(popup.element('sale-period').textContent, '3 matches on acsearch · 1 future-dated lot not counted');
+  assert.equal(popup.element('sale-period').textContent, '(3 results, 1 future-dated lot not counted)');
 });
 
 // Loop 3 (G-03): in the 600 px popup the median was on the bottom edge. What stood above it takes less room without losing anything: Save is a small
@@ -2499,8 +2516,10 @@ test('the card and the filter row give the median room: Save in the heading, one
   const save = markup.getElementById('companion-save-watchlist');
   assert.ok(save.closest('.type-heading'), 'Save stands in the heading row');
   assert.match(save.className, /secondary-button/);
-  assert.equal(save.textContent.trim(), 'Save');
-  assert.match(save.getAttribute('title'), /^Saves the reference/);
+  // K-14: the card's button is Watch, the verb the Upcoming list and the Watching pill already use.
+  assert.equal(save.textContent.trim(), 'Watch');
+  assert.equal(save.getAttribute('aria-label'), 'Watch: add this coin to your watchlist');
+  assert.equal(save.getAttribute('title'), 'Add to your watchlist to track its auction, bid and outcome in the workspace');
   assert.equal(markup.getElementById('specimens').closest('details')?.id, 'sides-details');
   assert.equal(markup.getElementById('sides-summary').textContent, 'Obverse · reverse');
   for (const id of ['citing-row', 'denomination-row']) assert.ok(markup.getElementById(id).closest('.research-heading'), id);
@@ -2560,7 +2579,7 @@ test('the header opens the workspace by name and the side panel is an icon that 
   assert.equal(panel.getAttribute('aria-label'), 'Keep the popup open beside the page (side panel)');
   assert.equal(panel.textContent.trim(), '');
   assert.equal(panel.parentElement.className, 'popup-header');
-  assert.match(markup.getElementById('first-run').textContent, /Save a coin to track its auction, bid and outcome in the workspace\./);
+  assert.match(markup.getElementById('first-run').textContent, /Watch a coin to track its auction, bid and outcome in the workspace\./);
 });
 
 // Loop 3 (G-01): a toolbar popup closes with every click on the page, and used to open again empty, asking acsearch again for the answer it had a
@@ -2959,4 +2978,291 @@ test('the popup says “Open the workspace” and no word the glossary retired',
   assert.equal(parseHtml(html).getElementById('companion-open-watchlist').textContent, 'Open the workspace');
   assert.doesNotMatch(html, /auction workspace|buyer premium|evidence/i);
   assert.doesNotMatch(html, /Hammer price/);
+});
+
+// Loop 6 (K-02): what a newcomer types is answered, never refused with a wall of spellings. Free words are offered as an acsearch search he starts
+// himself, a ruler the people table knows opens Refine on RIC with him filled in, and a pasted web address is told to be captured. Nothing is
+// fetched until the search is chosen, and text that sets out to be a reference keeps the spellings it misspelt.
+test('free words are offered as a search, a ruler opens Refine, and a web address is refused with a sentence', async () => {
+  const lookedUp = [];
+  const searched = [];
+  const asked = [];
+  const popup = await loadPopup({ permissionRequest: async (request) => { asked.push(request); return true; },
+    priceFetch: async (request) => { searched.push(request); return oneSale; },
+    lookupTypeImpl: async (reference) => { lookedUp.push(reference); return { status: 'none', corpus: 'ocre', query: '' }; } });
+  const send = async (text) => {
+    popup.element('quick-reference').value = text;
+    await popup.element('quick-reference').emit('input');
+    popup.element('quick-reference').value = text;
+    await popup.element('reference-form').emit('submit');
+    await settle();
+  };
+
+  await send('nero denarius');
+  assert.equal(popup.element('form-error').textContent, 'Nero is a RIC ruler. Add the type’s number under Refine reference, or search acsearch for the words.');
+  assert.equal(popup.element('free-text').hidden, false);
+  assert.equal(popup.element('phrase-search').textContent, 'Search acsearch for “nero denarius”');
+  assert.equal(popup.element('refine-reference').open, true);
+  assert.equal(popup.element('catalogue').value, 'RIC');
+  assert.equal(popup.element('ric-section').value, 'Nero');
+  assert.equal(popup.element('ric-volume').value, 'I (2nd edition)');
+  assert.equal(popup.element('reference-number').value, '');
+  assert.equal(popup.element('free-text-examples').children.length, 3);
+  assert.equal(popup.element('form-error').classList.contains('form-guide'), true, 'an answer, not a refusal');
+  assert.match(popup.element('free-text-hint').textContent, /RIC 972/);
+  assert.deepEqual([lookedUp.length, searched.length, asked.length], [0, 0, 0], 'nothing is fetched or asked for until the search is chosen');
+
+  await popup.element('phrase-search').onclick();
+  await settle();
+  assert.equal(JSON.stringify(asked.map(({ origins }) => origins)), '[["https://www.acsearch.info/*"]]');
+  assert.equal(searched.length, 1);
+  // Review M1: the words are searched as the phrase the button names, in acsearch's own quotes.
+  assert.equal(searched[0].term, '"nero denarius"');
+  assert.equal(popup.element('result').hidden, true, 'a phrase search has no card, so nothing can be saved from it');
+  assert.equal(popup.element('refine-reference').open, false, 'Refine folds away for the prices');
+  assert.equal(popup.element('research-prices').hidden, false);
+  assert.equal(popup.element('prices-panel').hidden, false);
+  assert.equal(popup.element('form-error').hidden, true);
+  assert.equal(popup.element('free-text').hidden, true);
+  assert.equal(lookedUp.length, 0);
+
+  await send('Athens tetradrachm');
+  assert.equal(popup.element('form-error').textContent, 'No catalogue reference in that text.');
+  assert.equal(popup.element('phrase-search').textContent, 'Search acsearch for “Athens tetradrachm”');
+  assert.equal(popup.element('quick-reference')['aria-invalid'], 'true');
+
+  const before = searched.length;
+  await send('https://www.cngcoins.com/Lot.aspx?LOT_ID=123456');
+  assert.equal(popup.element('form-error').textContent, 'That’s a web address. Open the page in a tab, then use “Capture the lot page you’re on” below.');
+  assert.equal(popup.element('free-text').hidden, true);
+  assert.equal(popup.element('companion-current-lot').open, true);
+  assert.equal(searched.length, before, 'a web address is never searched');
+  assert.equal(lookedUp.length, 0);
+
+  // Text that begins like a catalogue is a misspelt reference, and text with no letter names nothing: both keep the spellings.
+  for (const text of ['RIC XI Nero 1', 'Crawfrd 44/5', '1234', 'Price']) {
+    await send(text);
+    assert.match(popup.element('form-error').textContent, /^Couldn’t read that reference/, text);
+    assert.equal(popup.element('form-error').classList.contains('form-guide'), false, text);
+    assert.equal(popup.element('free-text').hidden, true, text);
+  }
+  assert.equal(searched.length, before);
+});
+
+test('a ruler typed alone leaves Refine ready: his number and Search look up his coin', async () => {
+  const lookedUp = [];
+  const card = { id: 'ric.1(2).ner.306', corpus: 'ocre', label: 'RIC I (second edition) Nero 306', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async (reference) => { lookedUp.push(reference); return { status: 'ok', card }; } });
+  popup.element('quick-reference').value = 'Nero';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.match(popup.element('form-error').textContent, /^Nero is a RIC ruler/);
+  assert.ok(popup.element('reference-number').focused, 'the cursor waits where the number goes');
+  popup.element('reference-number').value = '306';
+  await popup.element('reference-form').emit('input', { target: popup.element('reference-number') });
+  await popup.element('reference-form').emit('submit', { submitter: popup.element('refine-lookup-button') });
+  await settle();
+  assert.equal(lookedUp.length, 1);
+  assert.equal(JSON.stringify([lookedUp[0].catalogue, lookedUp[0].volume, lookedUp[0].section, lookedUp[0].number]), '["RIC","I (2nd edition)","Nero","306"]');
+  assert.equal(popup.element('result').hidden, false);
+});
+
+// Loop 6 (K-11): without an acsearch subscription the note sent a newcomer to sign in and nowhere else. It says what acsearch is, points to the free
+// CoinArchives search below, and that search's button is the filled one while acsearch shows no prices.
+test('a signed-out note names the subscription and the free CoinArchives search, whose button is filled until acsearch prices', async () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.equal(markup.getElementById('coinarchives-hint').textContent, 'Free public results, no account');
+  assert.equal(markup.getElementById('quick-help').textContent, 'Prices follow from acsearch (subscription) and CoinArchives (free).');
+  let answer = { status: 'signed-out' };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => answer });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-note-text').textContent,
+    'Hammer prices come from acsearch.info, which shows them to subscribers who are signed in. Select “Get CoinArchives prices” below for free public results, or sign in to acsearch and select “Get prices”:');
+  assert.equal(popup.element('signin-link').hidden, false);
+  const button = popup.element('coinarchives-prices-button');
+  assert.equal(button.classList.contains('primary-button'), true);
+  assert.equal(button.classList.contains('secondary-button'), false);
+  answer = oneSale;
+  await popup.element('prices-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-panel').hidden, false);
+  assert.equal(button.classList.contains('primary-button'), false);
+  assert.equal(button.classList.contains('secondary-button'), true);
+});
+
+// Loop 6 (K-15): a list of types says why no prices are shown, and never beside a Sign in link, whichever answer lands first. (The audit's
+// "Sign in ↗" was the hidden link's own text read from the note; this pins that it stays hidden.)
+test('a list of types never shows Sign in beside its note, whichever answer lands first', async () => {
+  const candidates = { status: 'candidates', partial: true, corpus: 'ocre', query: 'RIC I 306',
+    candidates: [{ id: 'ric.1(2).aug.306', title: 'RIC I (second edition) Augustus 306' }, { id: 'ric.1(2).ner.306', title: 'RIC I (second edition) Nero 306' }] };
+  for (const pricesFirst of [true, false]) {
+    const prices = deferred();
+    const lookup = deferred();
+    const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: () => prices.promise, lookupTypeImpl: () => lookup.promise });
+    popup.element('quick-reference').value = 'RIC I 306';
+    await popup.element('reference-form').emit('submit');
+    await settle();
+    if (pricesFirst) { prices.resolve({ status: 'signed-out' }); await settle(); assert.equal(popup.element('signin-link').hidden, false); }
+    lookup.resolve(candidates);
+    await settle();
+    if (!pricesFirst) { prices.resolve({ status: 'signed-out' }); await settle(); }
+    assert.equal(popup.element('prices-note-text').textContent, 'This reference names more than one type, so no prices are shown. Choose one type to see its prices.', String(pricesFirst));
+    assert.equal(popup.element('prices-note').hidden, false);
+    assert.equal(popup.element('signin-link').hidden, true, String(pricesFirst));
+  }
+});
+
+// Loop 6 (X-17): every price hidden behind a star is said as that, with Sign in, and without asserting the collector is signed out.
+test('a page whose every price is hidden says so, with Sign in, and names the lots still to come', async () => {
+  const upcoming = { id: 'u1', title: 'Nero as, Roma E-Sale 140', date: '12.10.2099', price: '*' };
+  for (const [lots, tail] of [[[upcoming], '; lots not yet sold are listed below.'], [[{ id: 'p1', title: 'Old', date: '01.01.2024', price: '*' }], '.']]) {
+    const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: 'Price 23', hidden: true, lots }) });
+    popup.element('quick-reference').value = 'Price 23';
+    await popup.element('reference-form').emit('submit');
+    await settle();
+    assert.equal(popup.element('prices-note-text').textContent, `Every price on this page is hidden (*). If you are signed out of acsearch, sign in and select “Get prices”${tail}`);
+    assert.equal(popup.element('signin-link').hidden, false);
+  }
+});
+
+// Loop 6 (X-10): a card drawn while nomisma.org did not answer says which names are missing, never their identifiers, and Retry fills them in.
+test('a card with names nomisma.org did not answer for says so, and Retry fills them in', async () => {
+  const card = { id: 'bigr.euthydemus_i.13.1', corpus: 'bigr', label: 'Bactrian and Indo-Greek Coinage Euthydemus I 13.1', authority: null, denomination: null,
+    mint: null, material: 'Silver', dates: '230–190 BC', obverse: {}, reverse: {}, bop: { king: 'Euthydemus I', series: '24A', citation: 'Euthydème I 24A' },
+    unnamed: [{ field: 'authority', slug: 'euthydemus_i_bactria' }, { field: 'denomination', slug: 'denomination_d_sco' }] };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }), lookupTypeImpl: async () => ({ status: 'ok', card }),
+    stored: new Map([['giga-pinax-labels-v1', JSON.stringify({ euthydemus_i_bactria: 'Euthydemus I', denomination_d_sco: 'Tetradrachm' })]]) });
+  popup.element('quick-reference').value = 'Bop Euthydemus I 24A';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const summary = popup.element('result-summary');
+  assert.equal(summary.children[0], 'Silver · 230–190 BC · names unavailable — nomisma.org didn’t answer · ');
+  const retry = summary.children[1];
+  assert.equal(retry.textContent, 'Retry');
+  await retry.emit('click');
+  await settle();
+  assert.equal(summary.children.join(''), 'Euthydemus I · Tetradrachm · Silver · 230–190 BC');
+});
+
+// Loop 6 (X-04): offline, a first-edition citation and a number the bundled volume lacks were both called a connection failure.
+test('a first-edition citation and a number the bundle lacks are not called a connection failure', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async (reference) => (reference.number.includes('1st') ? { status: 'first-edition', corpus: 'ocre', query: '', number: '306', volume: 'I (2nd edition)', book: 'RIC I' }
+      : { status: 'network', localStatus: 'none' }) });
+  popup.element('quick-reference').value = 'RIC I 306 (1st ed.)';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('form-error').textContent, 'RIC I 306 is cited from the first edition of RIC I. The catalogue here and OCRE use the second edition, whose numbers differ, so no type is opened. Auction results are searched by the number as written.');
+  assert.equal(popup.element('research-prices').hidden, false);
+  popup.element('quick-reference').value = 'RIC I² Nero 9999';
+  await popup.element('quick-reference').emit('input');
+  popup.element('quick-reference').value = 'RIC I² Nero 9999';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('form-error').textContent, 'Not in the bundled RIC I² (checked offline). numismatics.org couldn’t be reached to look further. You can still search auction results below.');
+});
+
+// Loop 6 (X-06): acsearch or numismatics.org hanging showed "Fetching acsearch…" or "Looking up…" for fifteen seconds with no way out, then called
+// the deadline a connection failure. After four seconds each wait says so with Cancel, which stops the request; the deadline says it was the wait.
+test('a slow acsearch search says it is still waiting, can be cancelled, and its deadline is not called a connection failure', async () => {
+  const timers = [];
+  const searches = [];
+  let answer = 'hang';
+  const popup = await loadPopup({ timers, permissionRequest: async () => true, lookupTypeImpl: async () => ({ status: 'none', corpus: 'pella', query: 'Price 23' }),
+    priceFetch: (request, options = {}) => {
+      searches.push(options.signal);
+      if (answer === 'timeout') return Promise.resolve({ status: 'timeout' });
+      return new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ status: 'cancelled' })));
+    } });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('sale-strength').textContent, 'Fetching acsearch…');
+  for (const run of timers.splice(0)) run();
+  const [waiting, cancel] = popup.element('sale-strength').children;
+  assert.equal(waiting, 'Still waiting for acsearch… ');
+  assert.equal(cancel.textContent, 'Cancel');
+  assert.ok(searches[0], 'the search is handed a signal to stop it by');
+  await cancel.emit('click');
+  await settle();
+  assert.equal(searches[0].aborted, true, 'Cancel stops the request');
+  assert.equal(popup.element('prices-note-text').textContent, 'The acsearch search was cancelled. Select “Get prices” to search again.');
+  assert.equal(popup.element('prices-button').disabled, false);
+
+  answer = 'timeout';
+  await popup.element('prices-form').emit('submit');
+  await settle();
+  const [message, again] = popup.element('prices-error').children;
+  assert.equal(message, 'acsearch didn’t answer within 15 seconds. It may be slow or down. ');
+  assert.equal(again.textContent, 'Try again');
+  const before = searches.length;
+  await again.emit('click');
+  await settle();
+  assert.equal(searches.length, before + 1, 'Try again searches again');
+});
+
+test('a slow lookup says it is still waiting for numismatics.org, can be cancelled, and its deadline is not called a connection failure', async () => {
+  const timers = [];
+  let answer = 'hang';
+  let asked = null;
+  const popup = await loadPopup({ timers, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: (reference, options = {}) => {
+      asked = options.cancel;
+      if (answer === 'timeout') return Promise.resolve({ status: 'timeout' });
+      return new Promise((resolve) => options.cancel?.addEventListener('abort', () => resolve({ status: 'cancelled' })));
+    } });
+  popup.element('quick-reference').value = 'Bop Euthydemus I 24A';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('lookup-wait').hidden, true);
+  for (const run of timers.splice(0)) run();
+  assert.equal(popup.element('lookup-wait').hidden, false);
+  assert.equal(popup.element('lookup-wait-text').textContent, 'Still waiting for numismatics.org…');
+  popup.element('lookup-cancel').onclick();
+  await settle();
+  assert.equal(asked.aborted, true, 'Cancel stops the request');
+  assert.equal(popup.element('lookup-wait').hidden, true);
+  assert.equal(popup.element('form-error').textContent, 'Lookup cancelled. Select “Look up” to try again.');
+  assert.equal(popup.element('lookup-button').disabled, false);
+
+  answer = 'timeout';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.match(popup.element('form-error').textContent, /^numismatics\.org didn’t answer within 15 seconds\. It may be slow or down\./);
+  assert.doesNotMatch(popup.element('form-error').textContent, /Couldn’t connect/);
+  // A wait that has ended says nothing more when its timer comes round.
+  for (const run of timers.splice(0)) run();
+  assert.equal(popup.element('lookup-wait').hidden, true);
+});
+
+// Loop 6 (K-12): nothing in the popup linked to help, so the right-click lookup, the side panel, Ctrl+K, the want list and backups were found by luck.
+// One "How it works" link at the foot of the popup opens the installation guide's first tour, a page the collector opens himself; the first popup
+// says the right-click lookup exists.
+test('one How it works link opens the first tour, and the first popup mentions the right-click lookup', () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  const links = markup.querySelectorAll('a').filter((link) => /How it works/.test(link.textContent));
+  assert.equal(links.length, 1);
+  const [help] = links;
+  assert.equal(help.getAttribute('href'), 'https://github.com/bth0mp/Giga-Pinax/blob/main/docs/INSTALL.md#first-checks');
+  assert.equal(help.getAttribute('target'), '_blank');
+  assert.match(help.getAttribute('rel'), /noopener/);
+  assert.ok(help.closest('#credit-line'));
+  assert.equal(markup.getElementById('right-click-help').textContent, 'Right-click a reference on any page to look it up.');
+  assert.ok(markup.getElementById('right-click-help').closest('#first-run'));
+  // The anchor it names is the guide's own heading.
+  assert.match(readFileSync(new URL('../docs/INSTALL.md', import.meta.url), 'utf8'), /^## First checks$/m);
+});
+
+// Loop 6 fix round (review M4b): an acsearch 5xx said "Couldn’t reach acsearch. Check your connection", though the connection was fine.
+test('an acsearch server error says acsearch answered with an error, not that the connection failed', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unavailable', httpStatus: 503 }) });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const [message, again] = popup.element('prices-error').children;
+  assert.equal(message, 'acsearch answered with an error (HTTP 503). It may be down for a while. ');
+  assert.equal(again.textContent, 'Try again');
 });
