@@ -193,8 +193,10 @@ test('over the bundled catalogue, a ruler and the one mint a heading names open 
   assert.equal(diocletian.status, 'candidates');
   assert.deepEqual(diocletian.candidates.map((entry) => entry.id).sort(), ['ric.5.dio.15', 'ric.6.lug.15']);
   // A mint where the ruler has no coin with the number narrows nothing: every coin is offered, as before.
-  const nowhere = await lookup('Constantine I. Follis, Londinium. RIC VII 42.');
-  assert.ok(nowhere.status !== 'ok' || sectionOf(nowhere) === 'Londinium', nowhere.card?.id);
+  // Constantine has no RIC VII Alexandria 500, only Treveri's, which is offered and not opened (loop S1 review, Minor 9).
+  const nowhere = await lookup('Constantine I. Follis, Alexandria. RIC VII 500.');
+  assert.equal(nowhere.status, 'candidates');
+  assert.deepEqual(nowhere.candidates.map((entry) => entry.id), ['ric.7.tri.500']);
 });
 
 // Loop V-01: two mints in one heading ("Rome Roman Empire. … Siscia mint.") may be a category and the mint. Narrowed to them, a coin is still only
