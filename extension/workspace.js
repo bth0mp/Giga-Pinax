@@ -1856,11 +1856,10 @@ async function initWorkspace() {
       if (!initialized) { renderAll(); announce(WORKER_UNREACHABLE, true); }
       else if (!initialized.ok) {
         renderAll();
-        // Records nothing can read get the recovery notice at the top of the page (X-02), not a raw sentence in the banner.
-        if (initialized.reason === 'unreadable') {
-          announce('Your records can’t be read. The notice at the top of this page has the ways out.', true);
-          mountRecovery({ document, bridge, reply: initialized });
-        } else announce(initialized.message, true);
+        // Records nothing can read get the recovery notice at the top of the page (X-02), an alert of its own, and no
+        // floating banner over it with the validator's sentence.
+        if (initialized.reason === 'unreadable') mountRecovery({ document, bridge, reply: initialized });
+        else announce(initialized.message, true);
       }
       else acceptIncoming(initialized.value);
       // A capture the background could not save says why, once, here (X-15).

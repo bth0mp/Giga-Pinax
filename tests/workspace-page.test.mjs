@@ -1481,7 +1481,7 @@ test('the workspace over unreadable records offers the rescue copy and a fresh s
   assert.equal(page.document.querySelector('main').children[0], notice);
   assert.equal(page.$('store-recovery-download').textContent, 'Download the stored data');
   assert.equal(page.$('store-recovery-reset').textContent, 'Start fresh, keeping a copy');
-  assert.equal(page.status(), 'Your records can’t be read. The notice at the top of this page has the ways out.');
+  assert.equal(page.status(), '', 'no banner over the notice');
 });
 
 // X-03: a coin set aside is never silent: the watchlist says so under its count, with the way to fix or remove it.
