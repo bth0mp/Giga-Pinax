@@ -334,6 +334,7 @@ export function sameReference(left, right) {
  * @returns {string}
  */
 export function historyLine(lot, event, locale = 'en-US') {
+  /** @type {Record<string, *>} */
   const context = lot?.auctionContext ?? {};
   const sale = [context.house, context.saleId].filter(Boolean).join(' ');
   const lotNumber = context.lotNumber ?? lot?.lotNumber;
@@ -394,7 +395,8 @@ export function lotRowAmountLabel(lot, format) {
  */
 export function raisePlanLine(lot, format) {
   if (!lot?.activeBid || !lot.plannedBid || (lot.outcome?.status && lot.outcome.status !== 'open')) return '';
-  const rate = Number.isInteger(lot.plannedBid.buyerPremiumBps) ? ` (${lot.plannedBid.buyerPremiumBps / 100}%)` : '';
+  const bps = lot.plannedBid.buyerPremiumBps;
+  const rate = Number.isInteger(bps) ? ` (${/** @type {number} */ (bps) / 100}%)` : '';
   return `Plan to raise to ${format(lot.plannedBid.amount)}${rate}`;
 }
 
