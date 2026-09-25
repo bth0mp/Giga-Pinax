@@ -1588,3 +1588,19 @@ test('a reload keeps typed fields the other window left alone and names what cha
   assert.equal(rebaseSentence([], ['Notes']), 'What you typed in Notes is kept.');
   assert.equal(rebaseSentence([], []), '');
 });
+
+// Fix round, Minor 6 (K-06): a month heading follows the instant the queue sorts by, in the collector's zone, so the
+// headings of a sorted list never run backwards across zones.
+test('month headings follow the sort instant in the collector’s zone, in order across zones', () => {
+  const now = '2026-03-20T12:00:00.000Z';
+  const london = { id: 'l', localDate: '2026-04-01', precision: 'date-only', eventKind: 'auction-day', timeZone: 'Europe/London' };
+  const tokyo = { id: 't', localDate: '2026-04-01', localTime: '08:00', precision: 'timed', eventKind: 'auction-starts', timeZone: 'Asia/Tokyo', startsAt: '2026-03-31T23:00:00.000Z' };
+  const newYork = { id: 'n', localDate: '2026-03-31', localTime: '23:00', precision: 'timed', eventKind: 'lot-closes', timeZone: 'America/New_York', startsAt: '2026-04-01T03:00:00.000Z' };
+  const lots = [{ id: 'a', auctionEventId: 'n' }, { id: 'b', auctionEventId: 't' }, { id: 'c', auctionEventId: 'l' }];
+  const sorted = auctionQueueForLots(lots, [london, tokyo, newYork], 'all-coins', now).map(({ event }) => event);
+  const view = { timeZone: 'Europe/London', now };
+  assert.deepEqual(sorted.map((event) => monthHeading(event, 'en-GB', view)), ['April 2026', 'April 2026', 'April 2026']);
+  // A New York collector has all three on the evening of 31 March, their own clock.
+  assert.deepEqual(sorted.map((event) => monthHeading(event, 'en-GB', { timeZone: 'America/New_York', now })), ['March 2026', 'March 2026', 'March 2026']);
+  assert.equal(monthHeading(null, 'en-GB', view), 'No sale date');
+});

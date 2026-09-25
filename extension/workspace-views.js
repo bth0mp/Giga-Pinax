@@ -144,14 +144,18 @@ export function eventWhen(event, { now = new Date().toISOString(), locale = 'en-
 }
 /**
  * The month heading a long coin list puts where the auction month changes (K-06): "March 2026", or "No sale date" for a
- * coin with no auction.
+ * coin with no auction. It is the month of the instant the queue sorts the sale by, on the collector's clock, so the
+ * headings of a sorted list never run backwards across zones (review Minor 6).
  * @param {Partial<AuctionEvent> | null | undefined} event
  * @param {string} [locale]
+ * @param {{ timeZone?: string, now?: string }} [view]
  * @returns {string}
  */
-export function monthHeading(event, locale = 'en-US') {
+export function monthHeading(event, locale = 'en-US', { timeZone = viewerTimeZone(), now = new Date().toISOString() } = {}) {
   if (!event?.localDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(event.localDate))) return 'No sale date';
-  return formatWith(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }, new Date(`${event.localDate}T12:00:00Z`), String(event.localDate).slice(0, 7));
+  const sortMs = eventTiming(event, now).sortMs;
+  if (sortMs === null) return 'No sale date';
+  return formatWith(locale, { month: 'long', year: 'numeric', timeZone }, new Date(sortMs), String(event.localDate).slice(0, 7));
 }
 
 /**
