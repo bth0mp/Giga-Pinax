@@ -60,10 +60,10 @@ const {
   savedLotsFor,
   coinsToWatch,
   savedPillText,
-  wantPillText,
   savedLineText,
   dueText,
 } = await import('../extension/companion-popup.js');
+const { wantPillText } = await import('../extension/core/wantlist.js');
 
 class TestElement {
   constructor(id = '') {

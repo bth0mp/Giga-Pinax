@@ -4,10 +4,10 @@ import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, re
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
-import { cardName, displayReference, documentMode, editionName, shouldRevealRefine, wantPillText } from './companion-popup.js';
+import { cardName, displayReference, documentMode, editionName, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
 import { formatMoney, minorDigits } from './core/money.js';
-import { openWantsFor, ricSectionKey, wantBadgeText } from './core/wantlist.js';
+import { openWantsFor, ricSectionKey, wantBadgeText, wantPillText } from './core/wantlist.js';
 import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
 import {

@@ -14,7 +14,7 @@ import { parseReference } from './lookup.js';
 import { validateDraftPayload } from './core/drafts.js';
 import { buildWorkspaceLotDraft, lotDraftToEditor, lotFormValues, offeredEventFromDraft } from './workspace-forms.js';
 import { eventWhen } from './workspace-views.js';
-import { WANT_GRADE_LABELS, openWantsFor, wantBadgeText } from './core/wantlist.js';
+import { openWantsFor, wantBadgeText, wantPillText } from './core/wantlist.js';
 
 const TABS = Object.freeze(['research', 'calculator', 'watchlist']);
 const bounded = (value, maximum) => typeof value === 'string'
@@ -226,16 +226,6 @@ export function savedPillText(lots, snapshot, { now = new Date().toISOString(), 
   const { status, bid, relative } = savedFacts(lots, snapshot, { now, locale, whole: true });
   if (status !== 'open') return status === 'won' ? 'In your collection' : `Saved · ${OUTCOME_WORDS[status] ?? status}`;
   return ['Watching', bid ? `${bid.amount} ${bid.kind === 'active' ? 'bid' : 'planned'}` : '', relative].filter(Boolean).join(' · ');
-}
-// A wanted type as its pill says it (H-05): "Wanted · up to £650 · VF+", from the first want of the type, the amount whole where it is exact;
-// wantBadgeText words the same in full for its tooltip and a screen reader. '' when the type is on no want list.
-export function wantPillText(matches, locale = 'en-US') {
-  const want = matches?.[0];
-  if (!want) return '';
-  const parts = ['Wanted'];
-  if (want.maxPrice) { try { parts.push(`up to ${formatMoney(want.maxPrice, locale, { narrow: true, whole: true })}`); } catch { /* not a price to say */ } }
-  if (Object.hasOwn(WANT_GRADE_LABELS, want.minGrade ?? '')) parts.push(`${want.minGrade}+`);
-  return parts.join(' · ');
 }
 
 // A bare reference (a card, or an acsearch lot's Watch) is saved in one step: validated as the workspace validates the draft it would have opened,
