@@ -164,6 +164,24 @@ test('money is a plain decimal with its currency beside it, never formatted and 
   assert.equal(decimalAmount({ currency: 'EUR', minor: Number.MAX_SAFE_INTEGER }), '90071992547409.91');
   assert.equal(decimalAmount(undefined), '');
   assert.equal(decimalAmount({ currency: 'USD', minor: -1 }), '');
+  // Each amount in its own currency's places: whole yen have none, and the forint keeps its two.
+  assert.equal(decimalAmount({ currency: 'JPY', minor: 1200000 }), '1200000');
+  assert.equal(decimalAmount({ currency: 'JPY', minor: 0 }), '0');
+  assert.equal(decimalAmount({ currency: 'HUF', minor: 120000000 }), '1200000.00');
+  assert.equal(decimalAmount({ currency: 'SEK', minor: 95005 }), '950.05');
+});
+
+test('a yen lot is written in whole yen in every money column, and its percentages keep two places', () => {
+  const snapshot = createEmptySnapshot(NOW);
+  const bid = { amount: { currency: 'JPY', minor: 1200000 }, buyerPremiumBps: 1750 };
+  snapshot.lots.push(lot(uuid(1), {
+    plannedBid: bid,
+    bidHistory: [{ id: uuid(11), action: 'planned-revised', ...bid, recordedAt: NOW }],
+  }));
+  const [row] = table(csvFiles(snapshot).lots);
+  assert.deepEqual([row.planned_bid, row.planned_bid_currency, row.planned_premium_percent], ['1200000', 'JPY', '17.50']);
+  const [history] = table(csvFiles(snapshot).bids);
+  assert.deepEqual([history.amount, history.currency, history.premium_percent], ['1200000', 'JPY', '17.50']);
 });
 
 test('every field is quoted and records end in CRLF, so commas, quotes and newlines survive', () => {

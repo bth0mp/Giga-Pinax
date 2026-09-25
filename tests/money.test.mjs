@@ -176,7 +176,7 @@ test('a stored increment ladder carries the currency its tiers are written in', 
   const tiers = [{ from: 0, step: 500 }, { from: 10000, step: 1000 }];
   assert.deepEqual(validateIncrementLadder({ currency: 'EUR', tiers }), { ok: true, value: { currency: 'EUR', tiers } });
   assert.equal(validateIncrementLadder({ tiers }).error.path, 'incrementLadder.currency');
-  assert.equal(validateIncrementLadder({ currency: 'JPY', tiers }).error.path, 'incrementLadder.currency');
+  assert.equal(validateIncrementLadder({ currency: 'XAU', tiers }).error.path, 'incrementLadder.currency');
   assert.equal(validateIncrementLadder({ currency: 'eur', tiers }).error.code, 'unsupported-currency');
   assert.equal(validateIncrementLadder({ currency: 'EUR', tiers: [{ from: 100, step: 5 }] }, 'preset.ladder').error.path, 'preset.ladder.tiers[0].from');
   assert.equal(validateIncrementLadder(tiers).error.path, 'incrementLadder');
@@ -359,7 +359,8 @@ test('parses locale decimal money into exact integer minor units', () => {
     ok: true,
     value: { currency: 'CHF', minor: 10000 },
   });
-  assert.deepEqual([...CURRENCIES], ['USD', 'EUR', 'GBP', 'CHF']);
+  // The four every earlier version knew come first, in their old order.
+  assert.deepEqual(CURRENCIES.slice(0, 4), ['USD', 'EUR', 'GBP', 'CHF']);
 });
 
 test('accepts either decimal separator and grouped amounts whatever the locale', () => {
@@ -424,7 +425,7 @@ test('rejects ambiguous or unsafe money input instead of rounding it', () => {
   }
   assert.equal(parseMoney('90071992547409.92', 'USD', 'en-US').error.code, 'unsafe-money');
   assert.equal(parseMoney('1'.repeat(100), 'USD', 'en-US').error.code, 'input-too-long');
-  assert.equal(parseMoney('1.00', 'JPY', 'en-US').error.code, 'unsupported-currency');
+  assert.equal(parseMoney('1.00', 'XAU', 'en-US').error.code, 'unsupported-currency');
 });
 
 test('validates stored money without coercing currency or minor units', () => {
@@ -438,7 +439,8 @@ test('validates stored money without coercing currency or minor units', () => {
     ok: true,
     value: { currency: 'CHF', minor: 1 },
   });
-  assert.equal(validateMoney({ currency: 'JPY', minor: 1 }).ok, false);
+  assert.equal(validateMoney({ currency: 'XAU', minor: 1 }).ok, false);
+  assert.equal(validateMoney({ currency: 'jpy', minor: 1 }).ok, false);
 });
 
 test('parses UI premium percentages into integer basis points', () => {
@@ -493,4 +495,173 @@ test('formats stored minor units without changing their currency', () => {
     formatMoney({ currency: 'USD', minor: Number.MAX_SAFE_INTEGER }, 'en-US'),
     '$90,071,992,547,409.91',
   );
+});
+
+// --- More currencies (G-23 / Q-15) ------------------------------------------------------------------------------
+
+import { UNSUPPORTED_CURRENCY_MESSAGE, formatAmount, minorDigits, plainAmount, plainDecimal } from '../extension/core/money.js';
+
+const NEW_CURRENCIES = ['AUD', 'CAD', 'CZK', 'DKK', 'HKD', 'HUF', 'JPY', 'NOK', 'PLN', 'SEK'];
+const OLD_CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF'];
+const LOCALES = ['en-US', 'en-GB', 'de-DE', 'de-CH', 'fr-FR', 'sv-SE', 'ja-JP', 'hu-HU', 'pl-PL', 'en-IN', 'ar-EG'];
+
+test('the currencies collectors bid in, each with its ISO 4217 minor units', () => {
+  assert.deepEqual([...CURRENCIES], [...OLD_CURRENCIES, ...NEW_CURRENCIES]);
+  for (const code of CURRENCIES) assert.equal(minorDigits(code), code === 'JPY' ? 0 : 2, code);
+  assert.equal(minorDigits('XAU'), null);
+  assert.equal(minorDigits('jpy'), null);
+  assert.equal(minorDigits(undefined), null);
+  assert.equal(UNSUPPORTED_CURRENCY_MESSAGE, 'Currency must be one of USD, EUR, GBP, CHF, AUD, CAD, CZK, DKK, HKD, HUF, JPY, NOK, PLN or SEK.');
+  assert.equal(parseMoney('1', 'XAU').error.message, UNSUPPORTED_CURRENCY_MESSAGE);
+});
+
+// The table is fixed so a stored count never changes meaning with the browser; it is checked here against Intl's own.
+test('the minor-units table agrees with Intl for every currency', () => {
+  for (const code of CURRENCIES) {
+    const places = new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).resolvedOptions().maximumFractionDigits;
+    assert.equal(minorDigits(code), places, code);
+  }
+});
+
+test('a JPY 1,200,000 hammer is 1,200,000 yen from typed text to minor units, display and plain text', () => {
+  for (const locale of LOCALES) {
+    for (const text of ['1200000', '1,200,000', '1.200.000', '1 200 000', "1'200'000", '1200000.00', '1,200,000.00']) {
+      assert.deepEqual(parseMoney(text, 'JPY', locale), { ok: true, value: { currency: 'JPY', minor: 1200000 } }, `${text} in ${locale}`);
+    }
+  }
+  const hammer = { currency: 'JPY', minor: 1200000 };
+  assert.equal(formatMoney(hammer, 'en-US'), '¥1,200,000');
+  assert.equal(formatMoney(hammer, 'ja-JP'), '￥1,200,000');
+  assert.equal(formatMoney(hammer, 'de-DE'), '1.200.000 ¥');
+  assert.equal(formatAmount(hammer, 'en-US'), '1,200,000');
+  assert.equal(plainAmount(hammer), '1200000');
+  // A premium on whole yen is rounded half up to whole yen, as the invoice is.
+  const cost = calculateBidCost(hammer, 1750, { shippingMinor: 3000, premiumVatBps: 1000 });
+  assert.equal(cost.value.premium.minor, 210000);
+  assert.equal(cost.value.premiumVat.minor, 21000);
+  assert.equal(cost.value.total.minor, 1434000);
+  assert.equal(formatMoney(cost.value.total, 'en-US'), '¥1,434,000');
+  assert.equal(calculatePremium({ currency: 'JPY', minor: 1 }, 5000).value.premium.minor, 1);
+  assert.equal(calculatePremium({ currency: 'JPY', minor: 1 }, 4999).value.premium.minor, 0);
+});
+
+test('a yen amount with a place it cannot have is refused, never rounded', () => {
+  for (const text of ['1200.5', '1200,50', '1,200,000.01', '0.01', '1200.05']) {
+    const parsed = parseMoney(text, 'JPY', 'en-US');
+    assert.equal(parsed.error?.code, 'invalid-format', text);
+    assert.equal(parsed.error.message, 'Money in JPY is whole units with no decimal places, written like 1200 or 1,200.');
+  }
+  // Where the locale does not group with it, "1.200" stays as ambiguous as it is for any currency, and the example
+  // given has no places.
+  assert.equal(parseMoney('1.200', 'JPY', 'en-US').error.message,
+    '“1.200” could mean two different amounts; write it without a thousands separator, for example 1200.');
+  assert.deepEqual(parseMoney('1.200', 'JPY', 'de-DE').value, { currency: 'JPY', minor: 1200 });
+  assert.equal(parseMoney('9007199254740991', 'JPY').value.minor, Number.MAX_SAFE_INTEGER);
+  assert.equal(parseMoney('9007199254740992', 'JPY').error.code, 'unsafe-money');
+});
+
+test('the forint keeps its two ISO places: whole forints are stored and shown exactly', () => {
+  assert.deepEqual(parseMoney('1 200 000', 'HUF', 'hu-HU').value, { currency: 'HUF', minor: 120000000 });
+  assert.deepEqual(parseMoney('950,50', 'HUF', 'hu-HU').value, { currency: 'HUF', minor: 95050 });
+  assert.equal(formatMoney({ currency: 'HUF', minor: 120000000 }, 'en-US'), 'HUF 1,200,000.00');
+  assert.equal(plainAmount({ currency: 'HUF', minor: 120000000 }), '1200000.00');
+});
+
+test('every new currency round-trips typed text, minor units, plain text and display exactly', () => {
+  let seed = 7;
+  const random = () => { seed = (seed * 48271) % 2147483647; return seed; };
+  for (const currency of NEW_CURRENCIES) {
+    for (let index = 0; index < 200; index += 1) {
+      const minor = index < 3 ? [0, 1, Number.MAX_SAFE_INTEGER][index] : random() * (index % 2 ? 1 : 4096) % Number.MAX_SAFE_INTEGER;
+      const text = plainAmount({ currency, minor });
+      for (const locale of ['en-US', 'de-DE', 'ar-EG']) {
+        assert.deepEqual(parseMoney(text, currency, locale).value, { currency, minor }, `${currency} ${text} ${locale}`);
+      }
+      const shown = formatAmount({ currency, minor }, 'en-US').replace(/,/g, '');
+      assert.equal(shown, text, `${currency} ${minor}`);
+      assert.ok(formatMoney({ currency, minor }, 'en-US').includes(formatAmount({ currency, minor }, 'en-US')));
+    }
+  }
+});
+
+// Every earlier version wrote two places for every amount; for the four currencies it knew, each conversion must give
+// exactly what it gave. These are the old conversions, copied from v0.37.0, as the oracle.
+function oldFormatMoney(money, locale, narrow = false) {
+  const whole = BigInt(money.minor) / 100n;
+  const fraction = String(money.minor % 100).padStart(2, '0');
+  const formatter = new Intl.NumberFormat(locale, {
+    style: 'currency', currency: money.currency, ...(narrow ? { currencyDisplay: 'narrowSymbol' } : {}),
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
+  return formatter.formatToParts(whole).map((part) => part.type === 'fraction' ? fraction : part.value).join('');
+}
+function oldLineFigure(money, locale) {
+  const whole = BigInt(money.minor) / 100n;
+  const fraction = String(money.minor % 100).padStart(2, '0');
+  let format;
+  try { format = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  catch { format = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  return format.formatToParts(whole).map((part) => (part.type === 'fraction' ? fraction : part.value)).join('');
+}
+function oldDecimal(minor) {
+  if (!Number.isSafeInteger(minor) || minor < 0) return '';
+  const digits = String(minor).padStart(3, '0');
+  return `${digits.slice(0, -2)}.${digits.slice(-2)}`;
+}
+
+test('the four currencies earlier versions knew convert exactly as they did', () => {
+  let seed = 11;
+  const random = () => { seed = (seed * 48271) % 2147483647; return seed; };
+  const minors = [0, 1, 5, 99, 100, 101, 25050, 120000, 13668, Number.MAX_SAFE_INTEGER];
+  for (let index = 0; index < 150; index += 1) minors.push(random() * (index % 3 ? 1 : 4194304) % Number.MAX_SAFE_INTEGER);
+  for (const currency of OLD_CURRENCIES) {
+    for (const minor of minors) {
+      const money = { currency, minor };
+      assert.equal(plainAmount(money), oldDecimal(minor), `${currency} ${minor}`);
+      assert.equal(plainDecimal(minor), oldDecimal(minor));
+      for (const locale of LOCALES) {
+        assert.equal(formatMoney(money, locale), oldFormatMoney(money, locale), `${currency} ${minor} ${locale}`);
+        assert.equal(formatMoney(money, locale, { narrow: true }), oldFormatMoney(money, locale, true));
+        assert.equal(formatAmount(money, locale), oldLineFigure(money, locale));
+      }
+    }
+  }
+  assert.equal(formatAmount({ currency: 'EUR', minor: 120050 }, 'not a locale!'), oldLineFigure({ minor: 120050 }, 'not a locale!'));
+  // Typed text reads to the same count it always did.
+  for (const text of ['1200', '1200.5', '1200.50', '1,200.50', '1.200,50', "1'200.50", '1 200,50', '0.05', '12,50', '1200.00']) {
+    for (const locale of ['en-US', 'de-DE', 'de-CH']) {
+      for (const currency of OLD_CURRENCIES) {
+        const parsed = parseMoney(text, currency, locale);
+        assert.ok(parsed.ok, `${text} ${locale}`);
+        assert.equal(plainAmount(parsed.value), oldDecimal(parsed.value.minor));
+      }
+    }
+  }
+  assert.deepEqual(parseMoney('1200.5', 'USD').value, { currency: 'USD', minor: 120050 });
+  assert.equal(parseMoney('1.200', 'USD', 'en-US').error.message,
+    '“1.200” could mean two different amounts; write it without a thousands separator, for example 1200 or 1200.00.');
+  assert.equal(parseMoney('1200.505', 'USD').ok, false);
+  assert.equal(parsePremiumPercent('22.505').ok, false);
+});
+
+// The narrow symbol is shown only where it names one currency: "$" is the US dollar to an en-US reader, so the
+// Australian, Canadian and Hong Kong dollars keep "A$", "CA$" and "HK$", and a "kr" no locale here gives to one crown
+// keeps the code.
+test('the narrow symbol is used only where it names one currency for the locale', () => {
+  const narrow = (currency, locale = 'en-US') => formatMoney({ currency, minor: 120000 }, locale, { narrow: true });
+  assert.deepEqual(['USD', 'AUD', 'CAD', 'HKD', 'EUR', 'GBP', 'CHF'].map((code) => narrow(code)),
+    ['$1,200.00', 'A$1,200.00', 'CA$1,200.00', 'HK$1,200.00', '€1,200.00', '£1,200.00', 'CHF 1,200.00']);
+  for (const code of ['DKK', 'NOK', 'SEK']) assert.equal(narrow(code), `${code} 1,200.00`, code);
+  // A sign only one listed currency has is narrow as before.
+  assert.equal(narrow('PLN'), 'zł 1,200.00');
+  assert.equal(narrow('CZK'), 'Kč 1,200.00');
+  assert.equal(formatMoney({ currency: 'JPY', minor: 1200000 }, 'en-US', { narrow: true }), '¥1,200,000');
+  // Where the locale gives "$" to its own dollar, that dollar has it and the others do not.
+  assert.equal(narrow('AUD', 'en-AU'), '$1,200.00');
+  assert.equal(narrow('USD', 'en-AU'), 'USD 1,200.00');
+  assert.equal(narrow('CAD', 'en-CA'), '$1,200.00');
+  assert.equal(narrow('SEK', 'sv-SE'), '1 200,00 kr');
+  // Where no listed currency has "$" as its own sign, it stays with the US dollar, as every earlier version showed it.
+  assert.equal(narrow('USD', 'en-GB'), '$1,200.00');
+  assert.equal(narrow('AUD', 'en-GB'), 'A$1,200.00');
 });

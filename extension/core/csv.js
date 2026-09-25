@@ -4,14 +4,14 @@
 // Every field is quoted (RFC 4180) and every record ends in CRLF, so a comma, a quote or a line break in a note
 // survives. A title copied from an auction page is untrusted, and a spreadsheet runs a cell that opens with `=`, `+`,
 // `-` or `@` (after any leading whitespace, and in full width too) as a formula, so such a cell is written with a leading
-// apostrophe: the spreadsheet shows the text and runs nothing. Money is a plain decimal with a `.` and its currency in
-// a column of its own - never formatted for a locale, and never added up across records, because the records hold
-// four currencies and no rate between them. The one total written is a won coin's own cost (hammer, premium, fees),
+// apostrophe: the spreadsheet shows the text and runs nothing. Money is a plain decimal with a `.` in its currency's own
+// places (none for the yen) and its currency in a column of its own - never formatted for a locale, and never added up
+// across records, because the records hold several currencies and no rate between them. The one total written is a won coin's own cost (hammer, premium, fees),
 // which the store worked out in its hammer's currency; where a figure was never recorded it is blank, and the
 // `total_cost_missing` column names what is missing. Dates and instants are written as the ISO text the records keep. Each file opens with a
 // byte order mark, which is what makes Excel read the file as UTF-8 rather than mangle an accented title.
 
-import { FRACTION_DIGITS as MINOR_DIGITS } from './money.js';
+import { plainAmount, plainDecimal } from './money.js';
 import { costFees, costTotal, lotCost } from './projections.js';
 /**
  * @typedef {import('./types.js').Money} Money
@@ -33,22 +33,20 @@ export function csvCell(value) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
-// Minor units as a decimal: 25050 GBP is "250.50". Anything that is not a whole non-negative amount writes nothing,
-// since a figure in a spreadsheet is worse than a gap if it is not the one saved.
+// Minor units as a decimal in the currency's own places: 25050 GBP is "250.50", 1200000 JPY is "1200000". Anything
+// that is not a whole non-negative amount writes nothing, since a figure in a spreadsheet is worse than a gap if it is
+// not the one saved.
 /**
  * @param {*} money
  * @returns {string}
  */
 export function decimalAmount(money) {
-  const minor = money?.minor;
-  if (!Number.isSafeInteger(minor) || minor < 0) return '';
-  const digits = String(minor).padStart(MINOR_DIGITS + 1, '0');
-  return `${digits.slice(0, -MINOR_DIGITS)}.${digits.slice(-MINOR_DIGITS)}`;
+  return plainAmount(money);
 }
 
 const currencyOf = (money) => (decimalAmount(money) ? money.currency ?? '' : '');
 // Basis points as the percent the collector typed: 2250 is "22.50".
-const percentOf = (bps) => (Number.isSafeInteger(bps) && bps >= 0 ? decimalAmount({ minor: bps }) : '');
+const percentOf = (bps) => plainDecimal(bps);
 
 // The workspace's own words for where a lot stands, so the column reads as the watchlist does.
 function lotStatus(lot) {

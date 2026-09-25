@@ -1,5 +1,5 @@
 // @ts-check
-import { CURRENCIES } from './money.js';
+import { CURRENCIES, UNSUPPORTED_CURRENCY_MESSAGE } from './money.js';
 import { validateDraftPayload } from './drafts.js';
 import { validateSaleEvidence } from './evidence.js';
 import {
@@ -135,7 +135,7 @@ function provenanceNotesResult(value, path) {
 /** @returns {Result<any>} */
 function costEstimateResult(value, path) {
   const object = objectResult(value, path); if (!object.ok) return object;
-  if (!CURRENCIES.includes(value.currency)) return failure('unsupported-currency', 'Currency must be USD, EUR, GBP, or CHF.', `${path}.currency`);
+  if (!CURRENCIES.includes(value.currency)) return failure('unsupported-currency', UNSUPPORTED_CURRENCY_MESSAGE, `${path}.currency`);
   return firstFailure(
     integerResult(value.shippingMinor, `${path}.shippingMinor`),
     integerResult(value.paymentFeeBps, `${path}.paymentFeeBps`, { maximum: 10000 }),

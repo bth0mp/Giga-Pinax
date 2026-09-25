@@ -1,6 +1,6 @@
 import {
-  CURRENCIES, MAX_INCREMENT_TIERS, calculateAffordableBid, calculateBidCost, formatMoney,
-  nextBidOnLadder, parseMoney, parsePercent, parsePremiumPercent, validateIncrementLadder,
+  CURRENCIES, MAX_INCREMENT_TIERS, calculateAffordableBid, calculateBidCost, formatMoney, minorDigits,
+  nextBidOnLadder, parseMoney, parsePercent, parsePremiumPercent, plainDecimal, validateIncrementLadder,
 } from './core/money.js';
 import { housePresetResult } from './core/fields.js';
 import { getSnapshot, newRequestId, sendCommand, subscribeToSnapshots } from './browser-api.js';
@@ -13,9 +13,10 @@ const presetKey = (name) => String(name ?? '').trim().replace(/\s+/g, ' ').toLoc
 // the money parser reads in every locale: ASCII digits, a point and no grouping. A locale's own
 // digits or decimal mark (ar-EG writes ٫, bn-BD its own digits) could not be read back at all. The
 // locale is accepted for call-site symmetry with the parser, which does not depend on it either.
-export function formatMinorInput(minor, locale = 'en-US') {
-  if (!Number.isSafeInteger(minor) || minor < 0) return '';
-  return `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, '0')}`;
+// An amount is written in its currency's own places (yen in whole yen); a percentage, given no
+// currency, in two.
+export function formatMinorInput(minor, locale = 'en-US', currency = null) {
+  return plainDecimal(minor, minorDigits(currency) ?? 2);
 }
 
 const LADDER_FORMAT = 'write each tier as the amount it starts at, a colon, and the step from there.';
@@ -52,12 +53,11 @@ export function parseIncrementLadder(text, currency, locale = 'en-US') {
 
 // Tiers are written with a point and no grouping whatever the collector's locale is: the money
 // parser accepts that everywhere, while a locale's own decimal mark it may refuse outright — ar-EG
-// writes ٫ — so a localized ladder could not be read back at all.
-export function formatIncrementLadder(tiers) {
+// writes ٫ — so a localized ladder could not be read back at all. They are in the ladder's own
+// currency's places: a yen schedule in whole yen.
+export function formatIncrementLadder(tiers, currency = null) {
   if (!Array.isArray(tiers)) return '';
-  const plain = (minor) => (Number.isSafeInteger(minor) && minor >= 0
-    ? `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, '0')}`
-    : '');
+  const plain = (minor) => formatMinorInput(minor, 'en-US', currency);
   return tiers.map((tier) => `${plain(tier.from)}: ${plain(tier.step)}`).join('\n');
 }
 
@@ -124,10 +124,10 @@ export function feeSheetEstimate(texts = {}, { currency, locale = 'en-US', incre
 // one 0.00 (shipping) so that saving it again keeps it recorded rather than taking it off.
 export function feeSheetTexts(estimate) {
   const anyFee = FEE_SHEET_FIELDS.some(({ key }) => estimate?.[key] > 0);
-  return Object.fromEntries(FEE_SHEET_FIELDS.map(({ name, key }) => {
+  return Object.fromEntries(FEE_SHEET_FIELDS.map(({ name, key, kind }) => {
     const value = estimate?.[key];
     if (value === 0 && (anyFee || name !== 'shipping')) return [name, ''];
-    return [name, formatMinorInput(value)];
+    return [name, formatMinorInput(value, 'en-US', kind === 'money' ? estimate?.currency : null)];
   }));
 }
 
@@ -218,9 +218,10 @@ export function parseHousePresets(text) {
 
 // An amount on a house's schedule, in whole units when it is a whole amount, as schedules are printed.
 function tierMoney(minor, currency, locale) {
-  if (minor % 100 !== 0) return formatMoney({ currency, minor }, locale);
+  const scale = 10n ** BigInt(minorDigits(currency) ?? 2);
+  if (BigInt(minor) % scale !== 0n) return formatMoney({ currency, minor }, locale);
   return new Intl.NumberFormat(locale, { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 })
-    .format(BigInt(minor) / 100n);
+    .format(BigInt(minor) / scale);
 }
 
 // The tier of a house's ladder a bid stands on, and its step: "on the €1,000–€2,000 tier, steps of
@@ -443,14 +444,16 @@ export function calculatorInputsForLot(values = {}, { loadedKey, loadedLotId, mo
   const loaded = loadedKey ?? loadedLotId;
   if (calculatorKey(values) !== undefined && calculatorKey(values) === loaded) return null;
   const estimate = values.costEstimate ?? {};
+  // The fee sheet's amounts are in its own currency, which is the hammer's whenever it was saved with it.
+  const feeCurrency = estimate.currency ?? values.currency;
   const inputs = {
     currency: values.currency ?? null,
     premium: formatMinorInput(values.buyerPremiumBps, locale),
-    shipping: formatMinorInput(estimate.shippingMinor, locale),
+    shipping: formatMinorInput(estimate.shippingMinor, locale, feeCurrency),
     paymentPercent: formatMinorInput(estimate.paymentFeeBps, locale),
-    paymentFixed: formatMinorInput(estimate.paymentFeeMinor, locale),
-    increment: formatMinorInput(estimate.incrementMinor, locale),
-    minimum: formatMinorInput(estimate.minimumBidMinor, locale),
+    paymentFixed: formatMinorInput(estimate.paymentFeeMinor, locale, feeCurrency),
+    increment: formatMinorInput(estimate.incrementMinor, locale, feeCurrency),
+    minimum: formatMinorInput(estimate.minimumBidMinor, locale, feeCurrency),
     premiumVat: formatMinorInput(estimate.premiumVatBps, locale),
     platformFee: formatMinorInput(estimate.platformFeeBps, locale),
     importVat: formatMinorInput(estimate.importVatBps, locale),
@@ -462,7 +465,7 @@ export function calculatorInputsForLot(values = {}, { loadedKey, loadedLotId, mo
   };
   // A saved hammer is not a budget: writing it into the budget field would answer a question the
   // collector did not ask.
-  if (mode !== 'budget') inputs.amount = formatMinorInput(values.hammerMinor, locale);
+  if (mode !== 'budget') inputs.amount = formatMinorInput(values.hammerMinor, locale, values.currency);
   return inputs;
 }
 
@@ -604,7 +607,7 @@ export function mountBidCalculator(
   const selectedPreset = () => (preset.value === ''
     ? null
     : preferences?.housePremiumPresets?.find((entry) => presetKey(entry.name) === preset.value) ?? null);
-  const ladderText = (record) => `${record?.currency ?? ''}\n${formatIncrementLadder(record?.tiers ?? null)}`;
+  const ladderText = (record) => `${record?.currency ?? ''}\n${formatIncrementLadder(record?.tiers ?? null, record?.currency)}`;
   // Tiers edited in Settings reach an open calculator through the same snapshot the premiums do.
   const selectLadder = () => {
     const item = selectedPreset();
@@ -620,7 +623,16 @@ export function mountBidCalculator(
     offerImportVat();
     if (selectLadder()) calculate();
   }, () => !destroyed);
+  // The empty fields show an amount in the chosen currency's places: 0.00 and a 0.01 step, or 0 and a step of 1 yen.
+  const showPlaceholders = () => {
+    const digits = minorDigits(currencyControl.value) ?? 2;
+    const zero = formatMinorInput(0, 'en-US', currencyControl.value);
+    for (const control of [amount, shipping, paymentFixed, minimum]) control.placeholder = zero;
+    increment.placeholder = digits ? `0.${'1'.padStart(digits, '0')}` : '1';
+  };
+  showPlaceholders();
   const calculate = () => {
+    showPlaceholders();
     status.textContent = '';
     status.dataset.error = 'false';
     result = null;
@@ -667,7 +679,7 @@ export function mountBidCalculator(
       const use = el('button', { type: 'button', className: 'quiet btn-sm', textContent: 'Use as hammer' });
       use.addEventListener('click', () => {
         currencyControl.value = found.currency;
-        amount.value = formatMinorInput(found.median.minor);
+        amount.value = formatMinorInput(found.median.minor, language(), found.currency);
         offerImportVat(); calculate();
         amount.focus?.();
       });

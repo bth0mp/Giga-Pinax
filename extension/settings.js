@@ -13,6 +13,16 @@ import './updates.js';
 import { LOCAL_CORPORA, defaultLocalCatalogue } from './local-catalogue.js';
 
 const $ = (id) => document.getElementById(id);
+// Every currency select on the page lists the currencies an amount may be recorded in, in the one order money.js keeps.
+function currencyOptions(select) {
+  for (const code of CURRENCIES) {
+    const option = document.createElement('option');
+    option.value = code;
+    option.textContent = code;
+    select.append(option);
+  }
+  return select;
+}
 let preferencesSnapshot;
 let pendingImport = null;
 let previewGeneration = 0;
@@ -172,14 +182,8 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
   const removeField = document.createElement('div');
   removeField.className = 'premium-remove';
   removeField.append(remove);
-  const currency = document.createElement('select');
+  const currency = currencyOptions(document.createElement('select'));
   currency.className = 'premium-ladder-currency';
-  for (const code of CURRENCIES) {
-    const option = document.createElement('option');
-    option.value = code;
-    option.textContent = code;
-    currency.append(option);
-  }
   currency.value = item.incrementLadder?.currency ?? $('currency').value;
   const ladder = document.createElement('textarea');
   ladder.className = 'premium-ladder';
@@ -187,7 +191,7 @@ function premiumRow(item = { name: '', buyerPremiumBps: null }) {
   // Giga Pinax ships no house's schedule, and a plausible-looking example inside a named house's
   // row would read as that house's own tiers, so the empty box shows the shape of a line instead.
   ladder.placeholder = 'from: step';
-  ladder.value = formatIncrementLadder(item.incrementLadder?.tiers);
+  ladder.value = formatIncrementLadder(item.incrementLadder?.tiers, item.incrementLadder?.currency);
   const currencyField = premiumField('Ladder currency', currency,
     'The currency this house’s increments are written in. The tiers apply while the calculator is set to that currency.');
   const ladderField = premiumField('Increment tiers', ladder,
@@ -787,6 +791,7 @@ if ((globalThis.location?.hash ?? '') !== '#from-workspace') {
 
 clearPreview();
 renderCsvTables();
+currencyOptions($('currency'));
 void refreshDiagnostics();
 void load().catch((error) => status(error.message || 'Could not load settings.', true));
 void loadCatalogueInfo();
