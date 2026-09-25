@@ -2279,7 +2279,7 @@ test('the type data is credited in one line at the foot of the scroll, not in a 
   assert.equal(markup.querySelectorAll('footer').length, 0);
   const line = markup.getElementById('credit-line');
   assert.ok(line.closest('.popup-scroll'), 'the line scrolls with the answer');
-  assert.equal(line.textContent.replace(/\s+/g, ' ').trim(), 'Type data from the ANS (ODbL) · full credits in Settings');
+  assert.equal(line.textContent.replace(/\s+/g, ' ').trim(), 'How it works ↗ · Type data from the ANS (ODbL) · full credits in Settings');
   assert.equal(markup.getElementById('open-credits').tagName.toLowerCase(), 'button');
   const css = readFileSync(new URL('../extension/popup.css', import.meta.url), 'utf8');
   assert.doesNotMatch(css, /popup-footer/);
@@ -3219,4 +3219,22 @@ test('a slow lookup says it is still waiting for numismatics.org, can be cancell
   // A wait that has ended says nothing more when its timer comes round.
   for (const run of timers.splice(0)) run();
   assert.equal(popup.element('lookup-wait').hidden, true);
+});
+
+// Loop 6 (K-12): nothing in the popup linked to help, so the right-click lookup, the side panel, Ctrl+K, the want list and backups were found by luck.
+// One "How it works" link at the foot of the popup opens the installation guide's first tour, a page the collector opens himself; the first popup
+// says the right-click lookup exists.
+test('one How it works link opens the first tour, and the first popup mentions the right-click lookup', () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  const links = markup.querySelectorAll('a').filter((link) => /How it works/.test(link.textContent));
+  assert.equal(links.length, 1);
+  const [help] = links;
+  assert.equal(help.getAttribute('href'), 'https://github.com/bth0mp/Giga-Pinax/blob/main/docs/INSTALL.md#first-checks');
+  assert.equal(help.getAttribute('target'), '_blank');
+  assert.match(help.getAttribute('rel'), /noopener/);
+  assert.ok(help.closest('#credit-line'));
+  assert.equal(markup.getElementById('right-click-help').textContent, 'Right-click a reference on any page to look it up.');
+  assert.ok(markup.getElementById('right-click-help').closest('#first-run'));
+  // The anchor it names is the guide's own heading.
+  assert.match(readFileSync(new URL('../docs/INSTALL.md', import.meta.url), 'utf8'), /^## First checks$/m);
 });

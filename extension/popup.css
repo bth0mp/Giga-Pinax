@@ -312,6 +312,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .credit-line {margin:12px 16px 16px; font-size:var(--text-meta); line-height:1.5; color:var(--muted);}
 .credit-line .text-button {padding:0; font-size:inherit; font-weight:400; color:var(--muted); text-decoration:underline;}
 .credit-line .text-button:hover {color:var(--accent);}
+/* K-12: the one way to the tour, first on the line. */
+.credit-line a {white-space:nowrap;}
 .lookup-prompt,.storage-note {font-size:12px; line-height:1.5; padding:12px 16px; color:var(--muted);}
 .storage-note {color:var(--error);}
 .sr-only {position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0;}

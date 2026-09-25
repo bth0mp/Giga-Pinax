@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- A **How it works ↗** link at the foot of the popup opens the installation guide's first tour on GitHub, which now also covers the right-click lookup, the side panel, **Ctrl+K**, the want list and backups; the first popup says "Right-click a reference on any page to look it up." The link is a page you open yourself; nothing is fetched for it.
+
 ### Changed
 
 - The popup answers what a newcomer types instead of refusing it with a list of spellings. Words that name no catalogue (`Athens tetradrachm`) say "No catalogue reference in that text." with a **Search acsearch for “Athens tetradrachm”** button, the example chips and the spellings the box reads; nothing is fetched until you choose the search, which shows acsearch's prices with no card. A ruler the people table knows (`Nero`, `nero denarius`, `Trajan`) also opens **Refine reference** on RIC with the ruler filled in and the cursor where the number goes. A pasted web address is no longer searched on acsearch as a phrase: the popup says to open the page and use **Capture the lot page you’re on**. Text that sets out to be a reference (`RIC XI Nero 1`, `Crawfrd 44/5`) keeps its spellings.

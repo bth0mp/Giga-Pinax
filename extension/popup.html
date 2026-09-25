@@ -41,7 +41,7 @@
           <label for="quick-reference">Reference</label>
           <div id="quick-search" class="search-row quick-search"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus aria-keyshortcuts="Control+K Meta+K" placeholder="Reference or pasted lot text" aria-describedby="form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div>
           <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
-          <div id="first-run" class="first-run" hidden><div class="example-row"><span class="field-hint">Try</span><ul id="example-list" class="recent-list example-list" aria-label="Example references"></ul></div><p id="quick-help" class="field-hint">Prices follow from acsearch (subscription) and CoinArchives (free).</p><p id="workspace-help" class="field-hint">Watch a coin to track its auction, bid and outcome in the workspace.</p></div>
+          <div id="first-run" class="first-run" hidden><div class="example-row"><span class="field-hint">Try</span><ul id="example-list" class="recent-list example-list" aria-label="Example references"></ul></div><p id="quick-help" class="field-hint">Prices follow from acsearch (subscription) and CoinArchives (free).</p><p id="workspace-help" class="field-hint">Watch a coin to track its auction, bid and outcome in the workspace.</p><p id="right-click-help" class="field-hint">Right-click a reference on any page to look it up.</p></div>
           <nav id="recent" class="recent" aria-label="Recent lookups" hidden><span class="field-hint recent-label">Recent</span><ul id="recent-list" class="recent-list"></ul><button id="recent-more" class="text-button recent-more" type="button" aria-expanded="false" aria-controls="recent-list" hidden>More</button></nav>
         </div>
         <div class="reference-body">
@@ -146,7 +146,7 @@
       </details>
       <p id="storage-note" class="storage-note" role="status" hidden>Preferences couldn’t be saved. This popup still works, but your choices may reset when reopened.</p>
       <noscript><p class="storage-note">Giga Pinax needs JavaScript to look up references.</p></noscript>
-      <p id="credit-line" class="credit-line"><span title="ANS OCRE, PELLA, CRRO, SCO, PCO, AGCO &amp; BIGR, under the Open Database License (ODbL)">Type data from the ANS (ODbL)</span> · <button id="open-credits" class="text-button" type="button" data-companion-runtime>full credits in Settings</button></p>
+      <p id="credit-line" class="credit-line"><a id="help-link" href="https://github.com/bth0mp/Giga-Pinax/blob/main/docs/INSTALL.md#first-checks" target="_blank" rel="noopener noreferrer" aria-label="How it works: the first tour in the installation guide, opens a new tab">How it works <span aria-hidden="true">↗</span></a> · <span title="ANS OCRE, PELLA, CRRO, SCO, PCO, AGCO &amp; BIGR, under the Open Database License (ODbL)">Type data from the ANS (ODbL)</span> · <button id="open-credits" class="text-button" type="button" data-companion-runtime>full credits in Settings</button></p>
     </div>
     </section>
     <section id="companion-panel-calculator" class="companion-tab-panel companion-scroll" role="tabpanel" aria-labelledby="companion-tab-calculator" hidden>

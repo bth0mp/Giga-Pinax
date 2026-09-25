@@ -44,7 +44,7 @@ Giga Pinax contacts a host only because you asked it to, and only these:
 | `numismatics.org`, `nomisma.org` | An online catalogue lookup, over HTTPS. A RIC, Crawford, Price, SC, CPE or Newell Demetrius reference answered by the bundled data contacts neither for its type record: the concept names a card shows are packaged with the records. Only **Show specimen photos**, when switched on, then asks `nomisma.org` for that type's photographed specimens. Bopearachchi references are always online. |
 | `www.acsearch.info` | Every lookup, once acsearch access is granted: the price search starts with the lookup and uses your existing acsearch session. |
 | `www.coinarchives.com` | Only after you select **Get CoinArchives prices** and grant optional access. One public results page, no credentials, no Pro data. |
-| `github.com` | Only when you choose a release or update download. |
+| `github.com` | Only when you choose a release or update download, or open **How it works** from the popup (a page of the installation guide). |
 | `bth0mp.github.io`, `github.com` | Firefox only, and not from Giga Pinax: Firefox's own add-on update check may read the project's update manifest, as it does for every add-on that names one, and a signed install downloads a newer signed version from the GitHub release. |
 | Your own photo hosts | Only once saved-coin comparison opens, for the external photo URLs you entered. |
 | `nomisma.org` and museum image servers | Only with **Show specimen photos** switched on in Settings (it is off by default): one query to Nomisma.org for the type on a card, then up to six photos loaded, with no referrer, from the collections that hold the coins, which see your IP address. Nothing about them is kept. |
