@@ -113,7 +113,7 @@ test('a mint-volume lot keeps its RIC citation clean and carries a strict matchi
   assert.equal(lot.references.length, 1);
   assert.equal(lot.references[0].text, 'RIC VII 287');
   assert.deepEqual(lotLookup(lot.references[0], lot.rulers), {
-    catalogue: 'RIC', volume: 'VII', section: '', number: '287', rulers: ['Constantine II'], id: 'ric.7.lon.287', struckAt: ['Rome', 'Londinium'],
+    catalogue: 'RIC', volume: 'VII', section: '', number: '287', rulers: ['Constantine II'], id: 'ric.7.lon.287', struckAt: ['Londinium'],
   });
   assert.equal(lotLabel(lot.references[0], lot.rulers), 'RIC VII 287 · Constantine II');
 });

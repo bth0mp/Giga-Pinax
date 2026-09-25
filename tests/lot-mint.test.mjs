@@ -32,8 +32,9 @@ test('a ruler beside a mint keeps the mint as where the coin was struck', () => 
 // offered. Every mint the heading names travels with the row, and the commemorative names are not read as mints at all.
 test('a heading carries every mint it names, and a commemorative city is no mint', () => {
   const struck = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers).struckAt; };
+  // The category in front of the ruler is no mint of his coin (loop S1 review, Important 1): only the mint behind him travels.
   assert.deepEqual(struck('Rome Roman Empire 323 - 324 PLON AE Nummus - Constantinus II (BEATA TRANQVILLITAS) Bronze Londinium Mint 3.22g XF RIC VII 287; Condition XF.'),
-    ['Rome', 'Londinium']);
+    ['Londinium']);
   assert.deepEqual(struck('Constantius II. Commemorative Series. Urbs Roma. Follis. Siscia. RIC VIII 323.'), ['Siscia']);
   assert.deepEqual(struck('Constantius II, for Urbs Roma. Follis. Siscia. RIC VIII 323.'), ['Siscia']);
   assert.deepEqual(struck('Constantius II. Follis. VRBS ROMA commemorative. Siscia mint. RIC VIII 323.'), ['Siscia']);
@@ -268,4 +269,34 @@ test('over the bundled catalogue, an unedited RIC I, II.1 or II.3 never opens a 
 test('over the bundled catalogue, a German edition remark behind the number opens the coin', { skip }, async () => {
   const rauch = await lookup('RÖMISCHE KAISERZEIT. Nero 54-68. As, Rom, 62-68. 10,80g. RIC 306 (2. Aufl.), WCN 275. ss/vz');
   assert.equal(rauch.card?.id, 'ric.1(2).ner.306');
+});
+
+// Loop S1 review, Important 1: a mint word in front of the ruler is the house's category or name ("Rome Roman Empire. …", "Roma Numismatics E-Sale
+// 100. …", "London Coins Auction 180. …"), and a place with a hoard behind it or "found near" in front of it is where the coin was found. Neither is
+// where it was struck, so neither travels with the row, and the ruler's coin of that mint is never opened on it: 4,272 wrong coins in the review's sweep.
+test('a mint before the ruler, or a find-spot, is not where the coin was struck', () => {
+  const struck = (text) => { const lot = findReferences(text); return lotLookup(lot.references[0], lot.rulers).struckAt; };
+  for (const text of ['Rome Roman Empire. Diocletian. Follis. RIC VI 1.', 'Roma Numismatics E-Sale 100. Diocletian. Follis. RIC VI 1.',
+    'London Coins Auction 180. Constantine I. Follis. RIC VI 108.', 'Constantine I, from the Lyon hoard. Follis. RIC VII 42.',
+    'Constantine I. Follis. Found near London. RIC VII 42.', 'Constantine I. Follis. Trier hoard. RIC VII 42.',
+    'Constantine I. Follis, found at Trier. RIC VII 42.', 'Constantine I. Follis. Aus dem Hort von Trier. RIC VII 42.', 'Constantine I. Follis. Trier find. RIC VII 42.']) {
+    assert.equal(struck(text), undefined, text);
+  }
+  // The mint behind the ruler still travels, and a category in front of it is left out.
+  assert.deepEqual(struck('Rome Roman Empire. Constantine I. Follis. Siscia mint. RIC VII 42.'), ['Siscia']);
+  assert.deepEqual(struck('Constantine I. Follis, Treveri. RIC VII 42.'), ['Treveri']);
+  assert.deepEqual(struck('Constantine I, from the Lyon hoard. Follis, Treveri. RIC VII 42.'), ['Treveri']);
+  // A heading naming no ruler is still its first mint's section, as before.
+  assert.equal(lotLookup(...(({ references, rulers }) => [references[0], rulers])(findReferences('Rome Roman Empire. Follis. Siscia mint. RIC VII 42.'))).section, 'Rome');
+});
+
+test('over the bundled catalogue, a category or a find-spot never opens the coin of its mint', { skip }, async () => {
+  for (const text of ['Rome Roman Empire. Diocletian. Follis. RIC VI 1.', 'Roma Numismatics E-Sale 100. Diocletian. Follis. RIC VI 1.',
+    'London Coins Auction 180. Constantine I. Follis. RIC VI 108.', 'Constantine I, from the Lyon hoard. Follis. RIC VII 42.',
+    'Constantine I. Follis. Found near London. RIC VII 42.', 'Constantine I. Follis. Trier hoard. RIC VII 42.']) {
+    const result = await lookup(text);
+    assert.notEqual(result.status, 'ok', `${text}: ${result.card?.id}`);
+  }
+  // The mint behind the ruler opens his coin there.
+  assert.equal((await lookup('Rome Roman Empire. Constantine I. Follis. Siscia mint. RIC VII 42.')).card?.id, 'ric.7.sis.42');
 });

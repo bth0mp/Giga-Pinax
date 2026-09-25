@@ -393,23 +393,33 @@ const LABELS = new Set(labelGroups.keys());
 // left out: a man's name is his, and the ruler path has always had it. The mints are kept out of LABELS above as well, so what counts as a legend is
 // exactly what counted before — a heading that opens "ROMA AETERNA" is read as the coin's words, not as the mint's name.
 const MINTS = Object.freeze(MINT_SPELLINGS.filter(([label]) => !LABELS.has(label))
-  .map(([label, section]) => Object.freeze([section, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})`, 'u'), label.split(' ')[0]]))
+  .map(([label, section]) => Object.freeze([section, new RegExp(`(?<!\\p{L})(?:${anyCase(label)})(?!\\p{L})`, 'gu'), label.split(' ')[0]]))
   .sort((a, b) => b[1].source.length - a[1].source.length));
 // The city a commemorative honours is no mint: "Urbs Roma" and "VRBS ROMA" always, and "Constantinopolis" where the heading says it is the
 // commemorative ("Constantinopolis commemorative", "for Constantinopolis", "Commemorative Series. Constantinopolis") rather than the mint's own
 // Latin name. They are blanked before the mints are read, as the god Elagabal is before the rulers.
 const COMMEMORATED = /\b[uv]rbs\s+roma\b|\b(?:for|commemorative(?:\s+series)?)[\s.,:]+(?:the\s+)?constantinopolis\b|\bconstantinopolis(?=[\s,]+(?:commemorative|series|type|issue)\b)/gi;
-// The mints a heading names, in text order, each once: a heading may name places that are no mint before the one it is struck at ("Rome Roman
-// Empire. … Siscia mint."), so every one is kept. Read exactly as the rulers are, with the same cheap substring test in front of each pattern and
-// the same fold, so a heading written "Trèves" is compared as the table holds it.
-function headingMints(text) {
+// Where a coin was found is no more where it was struck than a category is: a place with a hoard or a find behind it ("the Lyon hoard", "Trier
+// find", "Hort"), or "found near", "found at", "hoard of" in front of it ("Found near London", "Aus dem Hort von Trier"). A closed list, read on the
+// folded heading.
+const FIND_AFTER = /^\s+(?:hoard|find|treasure|hort|schatzfund|fund|ripostiglio|tesoro|tresor)(?!\p{L})/iu;
+const FIND_BEFORE = /(?:(?:found|discovered|unearthed|excavated|gefunden|trouvee?|rinvenut[oa]|hallad[oa])\s+(?:near|at|in|close\s+to|bei|pres\s+de|a|vicino\s+a|cerca\s+de|en)|(?:hoard|find|hort|fund|tresor|tesoro|ripostiglio)\s+(?:of|von|de|di|du))\s+(?:the\s+|dem\s+|la\s+|le\s+)?$/iu;
+// The mints a heading names, in text order, each once: a heading may name places that are no mint before the one it is struck at ("Roman Empire,
+// Rome. … Siscia mint."), so every one is kept. Read exactly as the rulers are, with the same cheap substring test in front of each pattern and
+// the same fold, so a heading written "Trèves" is compared as the table holds it. Only a name standing after `from` counts: a mint word in front
+// of the ruler is the house's category or name ("Rome Roman Empire. Diocletian. …", "London Coins Auction 180. …"), not where his coin was struck.
+function headingMints(text, from = -1) {
   const rest = fold(text).replace(COMMEMORATED, (match) => ' '.repeat(match.length));
   const lower = rest.toLowerCase();
   const found = [];
   for (const [section, pattern, probe] of MINTS) {
     if (!lower.includes(probe)) continue;
-    const at = pattern.exec(rest);
-    if (at) found.push({ index: at.index, section });
+    for (const at of rest.matchAll(pattern)) {
+      const end = at.index + at[0].length;
+      if (at.index <= from || FIND_AFTER.test(rest.slice(end, end + 20)) || FIND_BEFORE.test(rest.slice(Math.max(0, at.index - 40), at.index))) continue;
+      found.push({ index: at.index, section });
+      break;
+    }
   }
   return [...new Set(found.sort((a, b) => a.index - b.index).map(({ section }) => section))];
 }
@@ -424,7 +434,8 @@ function headingMints(text) {
 // the emperor's: he rides one on his own coins as often as the stone does.
 const GOD = /\b(?:stone|baetyl|betyl|betyle|betilo|stein|pierre|pietra|piedra|god|gott|gottes|dieu|dio|dios|deus|sol|temple|tempel|tempio|templo)(?:\s+[a-z]+)?\s+(?:(?:of|des|du|di|del|de)\s+)?(?:the\s+)?(?:(?:god|gott|gottes|dieu|dio|dios|deus)\s+)?(?:d')?elagabal(?:us)?(?![a-z])/gi;
 function rulersIn(text) {
-  let rest = fold(text).replace(/\bDiv(?:us|a)\b|\b(?:as|como|come)\s+(?:Caesar|Cesare?|Augustus|Augusto)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '').replace(GOD, '');
+  const blank = (match) => ' '.repeat(match.length);
+  let rest = fold(text).replace(/\bDiv(?:us|a)\b|\b(?:as|como|come)\s+(?:Caesar|Cesare?|Augustus|Augusto)\b/gi, blank).replace(/\baugust(?:us|a)\b/g, blank).replace(GOD, blank);
   // Nomisma knows two thousand spellings, more than any heading can hold: a name whose first word is nowhere in the text cannot match, and that one
   // substring test costs a fraction of running its pattern. Blanking only ever removes text, so the test is safe against the original.
   const lower = rest.toLowerCase();
@@ -433,7 +444,8 @@ function rulersIn(text) {
     if (!lower.includes(probe)) continue;
     rest = rest.replace(pattern, (match, offset) => { for (const name of names) found.push([offset, name]); return ' '.repeat(match.length); });
   }
-  return [...new Set(found.sort((a, b) => a[0] - b[0]).flatMap(([, name]) => [name, ...(FILED_UNDER[name] ?? [])]))];
+  const sorted = found.sort((a, b) => a[0] - b[0]);
+  return { names: [...new Set(sorted.flatMap(([, name]) => [name, ...(FILED_UNDER[name] ?? [])]))], first: sorted[0]?.[0] ?? -1 };
 }
 // The one ruler RIC files under another's name: RIC I² heads no section with Octavian and lists every coin of his under Augustus, so a heading naming
 // him ("Octavian as Augustus, 27 BC – 14 AD") names Augustus beside him for the lookup, as the card's own filing note says. A closed table from RIC's
@@ -661,12 +673,12 @@ export function findReferences(input) {
     return !seen.has(id) && seen.add(id);
   });
   const headline = heading(text.slice(0, kept.find((piece) => !COUNTERMARK.test(piece.key))?.start ?? text.length));
-  const rulers = rulersIn(headline);
+  const { names: rulers, first } = rulersIn(headline);
   // The mint travels on the rows rather than in the rulers: it is a place, so nothing may ask OCRE's portrait facet for it, and a heading that names
   // a ruler as well is the ruler's, as it always was ("Magnus Maximus, 383-388. AE2, Lugdunum. RIC 34." still searches for the man).
   // A heading that names a ruler as well still says where the coin was struck: the row carries every mint it names beside the rulers, and the
   // lookup never opens his coin from a mint of RIC VI–IX that is none of them. A heading with no ruler is the section of the first mint it names.
-  const named = headingMints(headline);
+  const named = headingMints(headline, rulers.length > 0 ? first : -1);
   const mint = rulers.length === 0 ? named[0] ?? '' : '';
   const mark = mint ? { mint } : named.length ? { struckAt: named } : null;
   return { references: mark ? references.map((found) => ({ ...found, ...mark })) : references, rulers };
