@@ -1,6 +1,6 @@
 # Giga Pinax Privacy Policy
 
-Effective date: 24 September 2026
+Effective date: 25 September 2026
 
 Giga Pinax is a browser extension for ancient-coin research and local auction and collection records. It has no Giga Pinax account, analytics, advertising or developer-operated data server. Questions may be filed publicly through [GitHub Issues](https://github.com/bth0mp/Giga-Pinax/issues). Do not include private auction, payment or collection information in a public issue.
 
