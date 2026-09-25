@@ -13,6 +13,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - **Settings › Backup and import** shows how full your records are, `1.6 MB of 5 MB used` over a thin meter, and from 80% says how to make room before any save is refused. **Preview import** and **Confirm import** say `Reading…` and `Importing…` while a large backup is worked through.
 - A page capture waits a day instead of half an hour, and the workspace lists every capture still waiting first on the page (`Captured an auction from leunumismatik.com 12 min ago · kept 23 h more · Use · Discard`), so one whose tab was closed or whose browser restarted is no longer lost unseen.
 - A right-click capture that could not be saved says why on the toolbar badge's tooltip (`…because your records fill the storage. Open Settings to make room.`, or `…can’t be read`), and the workspace says the same once, first on the page, the next time it opens, with **Open Settings**.
+- **Settings › Diagnostics** lists the last five failures under the count, newest first (`25 Sept, 07:12 · popup · acsearch · timed out`), so what just went wrong can be read without copying the list.
 - An import preview says before **Confirm** when the result would not fit (`This import would not fit: your records would take 5.3 MB, more than the 5 MB …`) and when a merge would change nothing (`Nothing to import: every record in this backup is already here, unchanged.`); **Confirm import** is not offered for either. It used to preview "Adds 0, updates 0" and refuse only after Confirm.
 
 ### Fixed

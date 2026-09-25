@@ -5,7 +5,7 @@ import {
 } from './core/backup.js';
 import { isUnreadable, mountRecovery } from './store-recovery.js';
 import { CSV_TABLES, csvFiles } from './core/csv.js';
-import { clearDiagnostics, diagnosticsText, readDiagnostics } from './core/diagnostics.js';
+import { clearDiagnostics, diagnosticsText, readDiagnostics, recentDiagnosticLines } from './core/diagnostics.js';
 import { CURRENCIES, parsePercent } from './core/money.js';
 import { formatIncrementLadder, formatMinorInput, housePresetsText, parseHousePresets, presetFromFields } from './bid-tools.js';
 import * as bridge from './browser-api.js';
@@ -711,7 +711,13 @@ function manifestVersion() {
 
 function showDiagnosticsCount(entries) {
   $('diagnostics-count').textContent = entries.length === 0 ? 'No failures recorded.'
-    : `${entries.length} ${entries.length === 1 ? 'failure' : 'failures'} recorded on this device.`;
+    : `${entries.length} ${entries.length === 1 ? 'failure' : 'failures'} recorded on this device.${entries.length > 5 ? ' The latest five:' : ''}`;
+  // The latest five, newest first, so what just failed is read without copying the list (X-16).
+  $('diagnostics-recent').replaceChildren(...recentDiagnosticLines(entries).map((line) => {
+    const item = document.createElement('li');
+    item.textContent = line;
+    return item;
+  }));
 }
 
 async function refreshDiagnostics() {

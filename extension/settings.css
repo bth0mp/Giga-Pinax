@@ -16,3 +16,6 @@ main :is(summary,button,input,select,textarea,a){scroll-margin-bottom:84px}
 .storage-gauge p{margin:0 0 4px}
 #storage-meter{display:block;width:100%;max-width:360px;height:8px}
 .storage-warning{color:var(--warning);font-size:var(--text-body)}
+/* X-16: the last five failures, newest first, under their count. */
+.diagnostics-recent{margin:4px 0 8px;padding-left:20px;color:var(--muted);font-size:var(--text-body);font-variant-numeric:tabular-nums}
+.diagnostics-recent:empty{display:none}

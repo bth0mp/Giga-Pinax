@@ -122,6 +122,8 @@ function loadSettings({
   const sandbox = {
     ...backup, ...money, ...bidTools, ...companionPreferences, ...localCatalogue, ...csv, ...storeRecovery,
     diagnosticsText: diagnostics.diagnosticsText,
+    // The page's own lines, read in UTC here so a test reads the same times on every machine.
+    recentDiagnosticLines: (entries) => diagnostics.recentDiagnosticLines(entries, { timeZone: 'UTC' }),
     defaultLocalCatalogue: { metadata: catalogueMetadata },
     bridge,
     ...browserGlobals(document, { localStorage, confirm, downloads: blobs, language }),
@@ -1776,4 +1778,27 @@ test('X-13: an import that would not fit is refused in the preview, with the fig
   assert.equal(page.element('confirm-import').disabled, true);
   assert.match(page.status(), /^This import would not fit: your records would take 5\.\d+ MB, more than the 5 MB Giga Pinax can keep in this browser\./);
   assert.equal(page.statusIsError(), 'true');
+});
+
+// X-16: the last five failures are on the page, newest first, not only a count until they are copied.
+test('X-16: Diagnostics lists the last five failures, newest first, under the count', async () => {
+  const at = (minute) => `2026-09-25T07:${String(minute).padStart(2, '0')}:00.000Z`;
+  const entries = [
+    ...Array.from({ length: 5 }, (_, index) => ({ at: at(index), page: 'popup', area: 'lookup', code: 'network', version: '0.39.0' })),
+    { at: at(12), page: 'popup', area: 'acsearch', code: 'timeout', version: '0.39.0' },
+    { at: at(13), page: 'background', area: 'capture', code: 'storage', version: '0.39.0' },
+    { at: at(14), page: 'workspace', area: 'coinarchives', code: 'http', status: 503, version: '0.39.0' },
+  ];
+  const page = await openSettings({ diagnosticsStored: { [diagnostics.DIAGNOSTICS_KEY]: entries } });
+  assert.equal(page.element('diagnostics-count').textContent, '8 failures recorded on this device. The latest five:');
+  assert.deepEqual(page.element('diagnostics-recent').children.map((item) => item.textContent), [
+    '25 Sept, 07:14 · workspace · CoinArchives · HTTP error 503',
+    '25 Sept, 07:13 · background · page capture · storage failed',
+    '25 Sept, 07:12 · popup · acsearch · timed out',
+    '25 Sept, 07:04 · popup · catalogue lookup · could not connect',
+    '25 Sept, 07:03 · popup · catalogue lookup · could not connect',
+  ]);
+  await page.element('clear-diagnostics').click();
+  await settle();
+  assert.equal(page.element('diagnostics-recent').children.length, 0);
 });
