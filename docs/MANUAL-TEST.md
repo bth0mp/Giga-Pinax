@@ -79,6 +79,8 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     *Expected:* the note says acsearch shows hammer prices to signed-in subscribers, points to **Get CoinArchives
     prices** below (now the filled button) and to **Sign in ↗**. It must not appear in step 7, and it must not appear
     merely because the only hits are lots that have yet to be sold.
+    Where every price on the page is a `*` and a lot is still to come, the note instead reads "Every price on this page
+    is hidden (*)…" with **Sign in ↗**, never "No hammer prices among the sales…".
 
 9. **A merge import preview that really overwrites something.** A merge keeps whichever copy of a record was written
     last, so a backup exported before your latest edit updates nothing and never reaches the safety copy. Make the

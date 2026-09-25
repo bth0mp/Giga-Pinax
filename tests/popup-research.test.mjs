@@ -3097,3 +3097,16 @@ test('a list of types never shows Sign in beside its note, whichever answer land
     assert.equal(popup.element('signin-link').hidden, true, String(pricesFirst));
   }
 });
+
+// Loop 6 (X-17): every price hidden behind a star is said as that, with Sign in, and without asserting the collector is signed out.
+test('a page whose every price is hidden says so, with Sign in, and names the lots still to come', async () => {
+  const upcoming = { id: 'u1', title: 'Nero as, Roma E-Sale 140', date: '12.10.2099', price: '*' };
+  for (const [lots, tail] of [[[upcoming], '; lots not yet sold are listed below.'], [[{ id: 'p1', title: 'Old', date: '01.01.2024', price: '*' }], '.']]) {
+    const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'unpriced', term: 'Price 23', hidden: true, lots }) });
+    popup.element('quick-reference').value = 'Price 23';
+    await popup.element('reference-form').emit('submit');
+    await settle();
+    assert.equal(popup.element('prices-note-text').textContent, `Every price on this page is hidden (*). If you are signed out of acsearch, sign in and select “Get prices”${tail}`);
+    assert.equal(popup.element('signin-link').hidden, false);
+  }
+});

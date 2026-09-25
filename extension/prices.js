@@ -1029,7 +1029,10 @@ export async function fetchPrices({ term, currency, category }, options = {}) {
     const summary = summarise(page, currency, now);
     // A page without a counted price still lists the lots not sold yet, so its lots come back with it for the Upcoming list.
     if (summary.count === 0 && signedOutPage(html, page, now)) return { status: 'signed-out', lots: page };
-    if (summary.count === 0) return { status: 'unpriced', term, ...(summary.uncounted.length ? { examples: summary.uncounted } : {}), lots: page };
+    // X-17: a page whose every price is acsearch's "*" is one whose prices are hidden, whatever else it says: the popup says so, rather than "no
+    // hammer prices", without claiming the collector is signed out.
+    const hidden = page.every((entry) => String(entry.price).trim() === '*');
+    if (summary.count === 0) return { status: 'unpriced', term, ...(summary.uncounted.length ? { examples: summary.uncounted } : {}), ...(hidden ? { hidden } : {}), lots: page };
     // The page's lots stay with the result, in memory only, so the popup draws a period from them without another request.
     return { status: 'ok', summary, lots: page };
   } catch (error) {

@@ -1839,3 +1839,16 @@ test('summaryText writes money and days in the locale it is given', () => {
   // A figure that is no amount is a dash, never a thrown summary.
   assert.match(summaryText({ label: 'X' }, { ...summary, lowerQuartile: Number.NaN }, 'USD', 'X', {}, 'de-DE'), /middle 50% —–/);
 });
+
+// Loop 6 (X-17): a page whose every price is "*" but carries no login link and one lot still to come was told "No hammer prices among the sales".
+// It is marked hidden, for the popup to say what the stars are; a page with any other kind of missing price is not.
+test('a page whose every price is a star is marked hidden, and no other unpriced page is', async () => {
+  const shell = (lots) => `<html><script>acsearch.initSearchResults = ${JSON.stringify(lots)};</script></html>`;
+  const read = async (lots) => fetchPrices({ term: 'q', currency: 'USD' }, { fetchImpl: fakeFetch(shell(lots)), now: NOW });
+  const stars = await read([lot('*', '01.01.2024', 'a'), lot('*', '01.06.2028', 'c')]);
+  assert.equal(stars.status, 'unpriced');
+  assert.equal(stars.hidden, true);
+  const mixed = await read([lot('*', '01.06.2028', 'c'), lot('-', '01.01.2024', 'a')]);
+  assert.equal(mixed.status, 'unpriced');
+  assert.equal(Object.hasOwn(mixed, 'hidden'), false);
+});

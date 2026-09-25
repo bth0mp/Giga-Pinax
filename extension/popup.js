@@ -14,7 +14,7 @@ import {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
-  WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, onlineMessage, rulerMessage,
+  WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, hiddenPricesMessage, onlineMessage, rulerMessage,
 } from './popup-messages.js';
 import { candidateGroups, coinArchivesCounts, filterLines, folded, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters } from './popup-drawing.js';
 import { $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, placeAtTop, revealAgain, ricChanged, shownTheme, syncThemeButton } from './popup-shell.js';
@@ -1373,6 +1373,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   offerCoinArchives(true);
   if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
+  else if (outcome.status === 'unpriced' && outcome.hidden) showPricesNote(hiddenPricesMessage(upcomingLots(outcome.lots ?? [], new Date()).length > 0), true);
   else if (outcome.status === 'unpriced') {
     const examples = outcome.examples ? ` Unrecognised prices: ${quoteList(outcome.examples)}.` : '';
     showPricesNote(`No hammer prices among the sales acsearch returned for “${outcome.term}”.${examples}`, false);

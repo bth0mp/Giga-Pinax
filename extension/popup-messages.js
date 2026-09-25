@@ -12,6 +12,8 @@ const ACSEARCH_TOO_LARGE_MESSAGE = 'acsearch sent a reply too large to read, so 
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
 // K-11: a newcomer does not know that acsearch is a subscription archive, nor that the CoinArchives block below is free and needs no account.
 const SIGN_IN_MESSAGE = 'Hammer prices come from acsearch.info, which shows them to subscribers who are signed in. Select “Get CoinArchives prices” below for free public results, or sign in to acsearch and select “Get prices”:';
+// X-17: every price on the page is acsearch's "*", which it shows a visitor who is not signed in and every lot not sold yet.
+const hiddenPricesMessage = (upcoming) => `Every price on this page is hidden (*). If you are signed out of acsearch, sign in and select “Get prices”${upcoming ? '; lots not yet sold are listed below' : ''}.`;
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
 const ACSEARCH_HOME = 'https://www.acsearch.info/';
@@ -75,5 +77,5 @@ export {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
-  WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, onlineMessage, rulerMessage,
+  WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, hiddenPricesMessage, onlineMessage, rulerMessage,
 };

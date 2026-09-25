@@ -17,6 +17,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 - Two spellings a keyboard types are read. `RIC I2 Nero 306`, `RIC I^2 Nero 306` and `RIC I2nd Nero 306` are RIC I² (no keyboard has a ² key; a glued `2` is read after volume I only, and a caret after any volume, so `RIC V2` stays unread). A ruler or mint written after the number reads exactly as it does before it: `RIC 306 Nero`, `Ric 306, nero` and `RIC II 253 Trajan` answer what `RIC Nero 306` and `RIC II Trajan 253` answer, and a pasted lot that names its ruler only after the number (`Denarius. RIC 306 Nero. 3.21 g.`) reads it as a heading's ruler. Only a name the people or mint tables know, and nothing but that name, is read so: `RIC 306 Nero as Caesar` and `RIC 306 hello` stay unread.
 - A coin saved from the popup's card now shows in the popup's **Watchlist** tab. The tab opens with what the list holds (`3 coins on your watchlist · 1 with a sale coming`), lists open coins that have no auction yet after those with a sale, newest first, each ending **no sale date · Add** (Add opens the coin in the workspace), and the coin you have just saved leads the list while the popup is open.
+- An acsearch page whose every price is hidden behind a `*` — signed out, with a lot still to come and no login link on the page — no longer says "No hammer prices among the sales": the note reads "Every price on this page is hidden (*). If you are signed out of acsearch, sign in and select “Get prices”; lots not yet sold are listed below.", with **Sign in ↗**.
 
 ## [0.39.0] - 2026-09-25
 
