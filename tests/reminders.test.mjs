@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   deriveReminderTriggers,
+  formerTriggerIds,
   localDateAtInstant,
   reconcileScheduler,
   reminderNotice,
@@ -453,6 +454,20 @@ test('no sale-day reminder rings after its sale’s 09:00, for any auction zone'
     }
   }
   assert.equal(checked, Intl.supportedValuesOf('timeZone').length * reminders.length);
+});
+
+// The store carries a settled alert from 0.38.0's instant to this version's (store-schedule.js): only a stamped sale-day
+// reminder that the V-04 bound moved has a former trigger.
+test('a sale-day reminder the V-04 bound moved names the trigger 0.38.0 derived for it', () => {
+  const unstamped = { id: reminderA, kind: 'wall-time', daysBefore: 0, localTime: '09:00' };
+  const zurich = dateOnlyDay('Europe/Zurich', '2026-10-23', [onCollectorClock('America/New_York', 1), onCollectorClock('America/New_York', 0)]);
+  assert.deepEqual([...formerTriggerIds(/** @type {*} */ ([zurich]))],
+    [[`${eventId}:${reminderA}:2026-10-23T01:00:00.000Z`, `${eventId}:${reminderA}:2026-10-23T13:00:00.000Z`]]);
+  for (const event of [
+    dateOnlyDay('Europe/Zurich', '2026-10-23', [unstamped]),
+    dateOnlyDay('Europe/London', '2026-10-02', [onCollectorClock('Europe/London', 0)]),
+    dateOnlyDay('Australia/Sydney', '2026-06-10', [onCollectorClock('Europe/London', 0, '20:00')]),
+  ]) assert.equal(formerTriggerIds(/** @type {*} */ ([event])).size, 0, event.timeZone);
 });
 
 // The banner bound above, for reminders that ring on the collector's clock: the auction's day and clock are the parts

@@ -585,6 +585,54 @@ test('a reminder on the collector’s clock keeps its zone through a rename made
   }
 });
 
+// V-04: 0.38.0 rang a stamped sale-day reminder by R3's rule, late in the auction's day for a sale east of the collector.
+// This version rings it earlier, before 09:00 there, so its trigger moves under an alert the store already holds. An alert
+// the collector has dealt with follows its reminder to the new instant and keeps their decision, so upgrading on the sale
+// day does not bring back a reminder they already dismissed; one not yet rung is replaced and rings at the new instant.
+test('a sale-day reminder that 0.38.0 rang late keeps the collector’s decision when its instant moves earlier', async () => {
+  const stored = createEmptySnapshot(NOW);
+  const eventId = uuid();
+  const [before, onTheDay] = [uuid(), uuid()];
+  stored.auctionEvents.push({
+    id: eventId, revision: 0, dataClass: 'collector', createdAt: NOW, updatedAt: NOW, ...zurichSaleDay(),
+    reminders: [{ id: before, kind: 'wall-time', daysBefore: 1, localTime: '09:00', collectorTimeZone: 'America/New_York' },
+      { id: onTheDay, kind: 'wall-time', daysBefore: 0, localTime: '09:00', collectorTimeZone: 'America/New_York' }],
+  });
+  // As 0.38.0 left them: both rang at 09:00 New York (13:00Z), and the collector dismissed them.
+  const alert = (reminderId, triggerAt, fields) => ({
+    id: uuid(), revision: 1, dataClass: 'collector', createdAt: NOW, updatedAt: NOW, triggerId: `${eventId}:${reminderId}:${triggerAt}`,
+    eventId, eventRevision: 0, reminderId, triggerAt, ...fields,
+  });
+  const acknowledged = { status: 'acknowledged', acknowledgedAt: '2026-10-23T13:05:00.000Z' };
+  stored.alerts.push(alert(before, '2026-10-22T13:00:00.000Z', acknowledged), alert(onTheDay, '2026-10-23T13:00:00.000Z', acknowledged));
+
+  // Upgraded at 10:00 New York on the sale day (16:00 Zurich): the sale-day reminder now belongs at 01:00Z, already past.
+  const storage = memoryStorage(structuredClone(stored));
+  const writer = createCommandWriter(storage, { now: () => '2026-10-23T14:00:00.000Z', newId: uuid, timeZone: 'America/New_York' });
+  const reconciled = await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(reconciled.ok, true, reconciled.message);
+  assert.equal(reconciled.value.dueEventCount, 0, 'nothing the collector dismissed notifies again');
+  const [kept, moved] = storage.read().alerts;
+  assert.deepEqual(kept, stored.alerts[0], 'the day-before reminder is untouched');
+  assert.deepEqual({ ...moved, revision: 0, updatedAt: NOW }, { ...stored.alerts[1], revision: 0, updatedAt: NOW,
+    triggerId: `${eventId}:${onTheDay}:2026-10-23T01:00:00.000Z`, triggerAt: '2026-10-23T01:00:00.000Z' });
+  const again = JSON.stringify(storage.read().alerts);
+  await writer.commitCommand(command('scheduler.reconcile'));
+  assert.equal(JSON.stringify(storage.read().alerts), again, 'a second reconcile changes nothing');
+
+  // Upgraded at 22:00 New York the evening before (04:00 Zurich), before 0.38.0 would have rung it: the new instant, 21:00
+  // New York, has passed, so it is due now rather than at 09:00 New York, seven hours into the sale.
+  const pending = structuredClone(stored);
+  pending.alerts[1] = alert(onTheDay, '2026-10-23T13:00:00.000Z', { status: 'pending', revision: 0 });
+  const early = memoryStorage(pending);
+  const due = await createCommandWriter(early, { now: () => '2026-10-23T02:00:00.000Z', newId: uuid, timeZone: 'America/New_York' })
+    .commitCommand(command('scheduler.reconcile'));
+  assert.equal(due.value.dueEventCount, 1);
+  const replaced = early.read().alerts.filter(({ reminderId }) => reminderId === onTheDay);
+  assert.deepEqual(replaced.map(({ triggerAt, status }) => [triggerAt, status]), [['2026-10-23T01:00:00.000Z', 'due']]);
+  assert.notEqual(replaced[0].id, pending.alerts[1].id, 'an alert still to ring is replaced, not carried');
+});
+
 test('a stored event whose start instant drifted from its local fields still loads', async () => {
   const stored = createEmptySnapshot(NOW);
   stored.auctionEvents.push({

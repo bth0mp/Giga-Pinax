@@ -234,6 +234,29 @@ function zonedEdge(localDate, localTime, timeZone) {
   return matches[0] ?? all[0] ?? null;
 }
 
+/**
+ * For each sale-day reminder stamped with the collector's zone whose instant the V-04 bound moved: the id of its trigger
+ * now, to the id 0.38.0 derived for it by R3's rule. The store carries the collector's decision on the old trigger's
+ * alert over to the new one (store-schedule.js), so a reminder they dismissed does not ring again because the rule
+ * changed under it.
+ * @param {AuctionEvent[]} events
+ * @returns {Map<string, string>}
+ */
+export function formerTriggerIds(events) {
+  const moved = new Map();
+  for (const event of events) {
+    if (event.precision !== 'date-only') continue;
+    for (const reminder of event.reminders ?? []) {
+      if (reminder.kind !== 'wall-time' || reminder.daysBefore !== 0 || reminder.collectorTimeZone === undefined) continue;
+      const now = ringOnCollectorClock(event, reminder);
+      const before = ringOnCollectorClock(event, reminder, false);
+      if (now === null || before === null || now === before || !isIsoInstant(now) || !isIsoInstant(before)) continue;
+      moved.set(`${event.id}:${reminder.id}:${now}`, `${event.id}:${reminder.id}:${before}`);
+    }
+  }
+  return moved;
+}
+
 function relevanceEnd(trigger) {
   if (trigger.precision === 'timed') {
     return instantAt(Date.parse(trigger.eventStartsAt) + 15 * 60000);

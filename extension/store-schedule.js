@@ -1,7 +1,7 @@
 // @ts-check
 // The store's side of the reminders: after a command changes an auction or a lot, the alerts are
 // brought into line with the triggers the open lots' events derive, and the next wake is planned.
-import { deriveReminderTriggers, reconcileScheduler } from './core/reminders.js';
+import { deriveReminderTriggers, formerTriggerIds, reconcileScheduler } from './core/reminders.js';
 import { baseRecord, getNow } from './store-builders.js';
 /**
  * @typedef {import('./core/types.js').Snapshot} Snapshot
@@ -13,6 +13,8 @@ import { baseRecord, getNow } from './store-builders.js';
 const ALERT_STATE_RANK = {
   pending: 0, due: 1, claimed: 2, delivered: 3, missed: 4, snoozed: 5, acknowledged: 6,
 };
+// The states in which the collector has had a reminder, or its day has passed: nothing is left to ring for it.
+const SETTLED = new Set(['delivered', 'acknowledged', 'missed']);
 
 /**
  * @param {Alert[]} alerts
@@ -35,6 +37,33 @@ function adoptTriggerIds(alerts) {
 }
 
 /**
+ * V-04 moved a stamped sale-day reminder from R3's instant, late in the auction's day, to one before 09:00 there. An alert
+ * 0.38.0 left settled at the old instant (rung, acknowledged or missed) takes the new one and keeps its state and times,
+ * so the collector's decision stands and the reminder does not ring twice. One still to ring is left to be replaced, and
+ * rings at the new instant. Nothing else moves: a trigger that R3 and V-04 place alike, an unstamped reminder, or an
+ * alert already at the new instant. The alerts are changed in place.
+ * @param {Alert[]} alerts
+ * @param {import('./core/types.js').AuctionEvent[]} events
+ * @param {Map<string, import('./core/types.js').ReminderTrigger>} triggersById
+ * @param {string} now
+ * @returns {void}
+ */
+function followMovedReminders(alerts, events, triggersById, now) {
+  const moved = formerTriggerIds(events);
+  if (moved.size === 0) return;
+  const byTrigger = new Map(alerts.map((alert) => [alert.triggerId, alert]));
+  for (const [triggerId, formerId] of moved) {
+    const alert = byTrigger.get(formerId);
+    const trigger = triggersById.get(triggerId);
+    if (!alert || !trigger || byTrigger.has(triggerId) || !SETTLED.has(alert.status)) continue;
+    alert.triggerId = triggerId;
+    alert.triggerAt = trigger.triggerAt;
+    alert.revision += 1;
+    alert.updatedAt = now;
+  }
+}
+
+/**
  * Brings the alerts and the scheduler of a root being written into line with its events; the root is
  * changed in place and the plan it was reconciled to is returned.
  * @param {Snapshot} next
@@ -47,7 +76,9 @@ function reconcileIntoSnapshot(next, context) {
     next.lots.some((lot) => lot.auctionEventId === event.id && lot.outcome.status === 'open'));
   const triggers = deriveReminderTriggers(events, now);
   const triggersById = new Map(triggers.map((trigger) => [trigger.id, trigger]));
-  next.alerts = adoptTriggerIds(next.alerts).filter((alert) => triggersById.has(alert.triggerId));
+  next.alerts = adoptTriggerIds(next.alerts);
+  followMovedReminders(next.alerts, events, triggersById, now);
+  next.alerts = next.alerts.filter((alert) => triggersById.has(alert.triggerId));
   const existing = new Set(next.alerts.map(({ triggerId }) => triggerId));
   for (const trigger of triggers) {
     if (existing.has(trigger.id)) continue;
