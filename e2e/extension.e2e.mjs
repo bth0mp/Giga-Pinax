@@ -2,7 +2,7 @@
 // which the repository's own suites do without. Each check is one step of docs/MANUAL-TEST.md that a browser can show
 // offline:
 //
-//   step 18  The filter switches: "Only results citing …" draws as a normal checkbox with its label beside it, in the
+//   step 18  The filter switches: the "Citing …" pill draws as a normal checkbox with its label beside it, in the
 //            toolbar popup's width and in the side panel's.
 //   step 19  A bare RIC number shows no median: `RIC 237` offers types to choose from, and no price search, median or
 //            Get prices appears until one is chosen.
@@ -10,7 +10,9 @@
 //            Western digits with a full stop, and Save settings with nothing touched succeeds.
 //
 // and the popup's frame, which only a real layout shows: its header and tabs stay put through a lot lookup after a list
-// of types, the card stays where it is when acsearch answers after it, and Ctrl+K and the skip link reach the Reference box.
+// of types, the card stays where it is when acsearch answers after it (and, at 400x600, the median shows on first paint),
+// Save saves in one step without opening a tab, a popup opened again draws its last answer without asking acsearch, a failed
+// Bopearachchi lookup searches nothing and keeps its error in view, and Ctrl+K and the skip link reach the Reference box.
 //
 // The rest of that list needs a signed-in acsearch session, a real auction page, a second browser or a person's eye.
 //
@@ -123,7 +125,7 @@ test('step 18: the citing filter is a normal checkbox with its label beside it, 
         return { x, y, width, height };
       }));
       const text = await page.locator('#citing-label').textContent();
-      assert.match(text, /^Only results citing /, path);
+      assert.match(text, /^Citing /, path);
       // A checkbox the size of a checkbox, not a full-width box.
       assert.ok(box.width <= 24 && box.height <= 24, `${path}: checkbox is ${box.width}x${box.height}`);
       // The label beside it on the same line, and whole inside the page.
@@ -209,6 +211,11 @@ test('prices arriving after the card leave the card where it is', async () => {
         await page.waitForTimeout(900);
         assert.deepEqual(await frame(), before, label);
         assert.ok(before.result >= 0 && before.result < height / 2, `${label}: the card starts at ${before.result}`);
+        // Loop 3 (G-03): in the 600 px popup the figure, its two stat lines and the range all show on first paint.
+        if (height === 600) {
+          assert.ok(before.median <= 400, `${label}: the median starts at ${before.median}`);
+          assert.ok(before.median + 90 < height, `${label}: the stat lines end below the fold`);
+        }
         await page.close();
       }
     } finally {
@@ -262,9 +269,35 @@ test('the stat lines keep every count at 360 and 320, and one wrap moves nothing
   }
 });
 
+// Loop 3 fix round (review I2): the card's longest source line ("Local OCRE catalogue · RIC I, second edition") pushed
+// Save past the edge of the 320 px panel and the panel scrolled sideways. Nothing in the answer is wider than its panel.
+test('at 320 px the answer never scrolls sideways and Save stays whole', async () => {
+  const browser = await launch();
+  try {
+    for (const path of ['popup.html', 'popup.html?panel=1']) {
+      const page = await browser.context.newPage();
+      await page.setViewportSize({ width: 320, height: 900 });
+      await page.goto(browser.url(path));
+      await lookUp(page, 'RIC I² Nero 306');
+      await page.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+      await page.locator('#result-source', { hasText: 'RIC I, second edition' }).waitFor({ timeout: 15000 });
+      const frame = await page.evaluate(() => {
+        const scroller = document.querySelector('.popup-scroll');
+        const save = document.getElementById('companion-save-watchlist').getBoundingClientRect();
+        return { scrollWidth: scroller.scrollWidth, clientWidth: scroller.clientWidth, saveRight: Math.round(save.right), panelRight: Math.round(scroller.getBoundingClientRect().right) };
+      });
+      assert.equal(frame.scrollWidth, frame.clientWidth, `${path}: ${JSON.stringify(frame)}`);
+      assert.ok(frame.saveRight <= frame.panelRight, `${path}: Save ends at ${frame.saveRight}, the panel at ${frame.panelRight}`);
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
 // Fix round 2 (re-review Important 2): what Save reference to watchlist says is said under its button, so the Reference box
 // stays uncovered and can be clicked straight away.
-test('after Save reference to watchlist the Reference box is still the thing under its own centre', async () => {
+test('after Save the coin is saved in one step, and the Reference box is still the thing under its own centre', async () => {
   const browser = await launch();
   try {
     const page = await browser.context.newPage();
@@ -272,8 +305,12 @@ test('after Save reference to watchlist the Reference box is still the thing und
     await page.goto(browser.url('popup.html'));
     await lookUp(page, 'Price 23');
     await page.locator('#companion-save-watchlist:not([disabled])').waitFor({ timeout: 15000 });
+    const pages = browser.context.pages().length;
     await page.locator('#companion-save-watchlist').click();
-    await page.locator('#announcement', { hasText: 'Watchlist details are ready to review.' }).waitFor({ state: 'attached', timeout: 15000 });
+    // Loop 3 (G-02): saved in one step, said under the card with Open and Undo; no workspace tab opens by itself.
+    await page.locator('#companion-saved-line', { hasText: 'Saved to your watchlist' }).waitFor({ timeout: 15000 });
+    assert.equal(browser.context.pages().length, pages, 'no tab opened');
+    assert.equal(await page.locator('#companion-saved-line button').allTextContents().then((labels) => labels.join(' ')), 'Open Undo');
     await page.bringToFront();
     // The panel scrolled as after a longer answer, so the Reference row is the one stuck under the tabs.
     await page.evaluate(() => document.querySelector('.popup-scroll').scrollTo(0, 300));
@@ -283,6 +320,63 @@ test('after Save reference to watchlist the Reference box is still the thing und
       return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.id;
     });
     assert.equal(hit, 'quick-reference');
+  } finally {
+    await browser.close();
+  }
+});
+
+// Loop 3 (G-01): a toolbar popup closes with every click on the page. Opened again, it draws the last answer at once from
+// the session - card, median and all - and asks acsearch nothing; Refresh is what asks again.
+test('a popup opened again draws its last answer without asking acsearch', async () => {
+  const browser = await launch();
+  let searches = 0;
+  await browser.context.route('https://www.acsearch.info/search.html*', async (route) => { searches += 1; await route.fallback(); });
+  try {
+    const first = await browser.context.newPage();
+    await first.setViewportSize({ width: 400, height: 600 });
+    await first.goto(browser.url('popup.html'));
+    await lookUp(first, 'RIC I² Nero 306');
+    await first.locator('#result').waitFor({ state: 'visible', timeout: 15000 });
+    await first.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+    const median = await first.locator('#median-amount').textContent();
+    await first.close();
+    const before = searches;
+    const again = await browser.context.newPage();
+    await again.setViewportSize({ width: 400, height: 600 });
+    await again.goto(browser.url('popup.html'));
+    await again.locator('#median-line').waitFor({ state: 'visible', timeout: 5000 });
+    assert.equal(await again.locator('#median-amount').textContent(), median);
+    assert.equal(await again.locator('#quick-reference').inputValue(), 'RIC I² Nero 306');
+    assert.equal(await again.locator('#result-reference').textContent(), 'RIC I² Nero 306');
+    assert.match(await again.locator('#prices-restored').textContent(), /^as of just now · Refresh$/);
+    await again.waitForTimeout(1000);
+    assert.equal(searches, before, 'acsearch was not asked again');
+    await again.locator('#refresh-prices').click();
+    await again.locator('#prices-panel[data-state="ready"]').waitFor({ timeout: 15000 });
+    assert.equal(searches, before + 1, 'Refresh asks again');
+  } finally {
+    await browser.close();
+  }
+});
+
+// Loop 3 (G-10): an online-only reference whose card cannot be had searched acsearch anyway and scrolled its own error
+// away under a median for a query nobody checked. Its prices wait for its card; the error stands in view under the box.
+test('a Bopearachchi lookup that fails offline searches nothing and keeps its error in view', async () => {
+  const browser = await launch();
+  let searches = 0;
+  await browser.context.route('https://www.acsearch.info/search.html*', async (route) => { searches += 1; await route.fallback(); });
+  try {
+    const page = await browser.context.newPage();
+    await page.setViewportSize({ width: 400, height: 600 });
+    await page.goto(browser.url('popup.html'));
+    await lookUp(page, 'Bop Euthydemus I 9C');
+    await page.locator('#form-error').waitFor({ state: 'visible', timeout: 15000 });
+    await page.waitForTimeout(1500);
+    assert.equal(searches, 0, 'acsearch was not searched');
+    assert.equal(await page.locator('#median-line').isVisible(), false);
+    const { error, row } = await page.evaluate(() => ({ error: document.getElementById('form-error').getBoundingClientRect().toJSON(),
+      row: document.getElementById('quick-search').getBoundingClientRect().toJSON() }));
+    assert.ok(error.top >= row.bottom - 1 && error.bottom <= 600, `the error at ${Math.round(error.top)}–${Math.round(error.bottom)}, the row ends at ${Math.round(row.bottom)}`);
   } finally {
     await browser.close();
   }
@@ -301,8 +395,8 @@ test('Ctrl+K and the skip link take the keyboard to the Reference box', async ()
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'quick-reference');
     assert.equal(await page.locator('#companion-panel-research').isVisible(), true);
     await page.locator('#companion-tab-watchlist').click();
-    // Nothing comes before the skip link: one stop back from the header's first button lands on it.
-    await page.locator('#open-panel').focus();
+    // Nothing comes before the skip link: one stop back from the header's first button (Workspace) lands on it.
+    await page.locator('#open-workspace').focus();
     await page.keyboard.press('Shift+Tab');
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'skip-to-research');
     assert.equal(await page.locator('#skip-to-research').isVisible(), true);
