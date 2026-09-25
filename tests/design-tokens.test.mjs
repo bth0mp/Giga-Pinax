@@ -154,7 +154,7 @@ test('Settings uses the shared scale and button kinds', () => {
   for (const id of ['add-premium', 'copy-presets', 'paste-presets', 'export-csv', 'download-quarantine', 'export-raw', 'copy-diagnostics']) {
     assert.match(html, new RegExp(`<button id="${id}" class="secondary"`), id);
   }
-  assert.match(html, /<button class="secondary" type="submit">Preview import<\/button>/);
+  assert.match(html, /<button id="preview-import" class="secondary" type="submit">Preview import<\/button>/);
   assert.match(html, /<button id="clear-diagnostics" class="quiet"/);
 });
 
