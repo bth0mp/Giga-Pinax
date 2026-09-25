@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as money from '../extension/core/money.js';
-import { FakeDocument, browserGlobals, pageSource } from './helpers/dom.mjs';
+import { FakeDocument, browserGlobals, pageSource, parseHtmlFile } from './helpers/dom.mjs';
 import {
   buildBidCalculation, calculatorInputsForLot, createPreferenceRevisionGate, formatIncrementLadder,
   formatMinorInput, housePresetsText, ladderTierText, parseHousePresets, parseIncrementLadder, presetFromFields, presetsWithPremium, snapshotSupersedes,
@@ -338,6 +338,8 @@ async function mountCalculator({ snapshot }) {
     container,
     field,
     output: container.querySelector('.bid-calculator-output'),
+    figure: container.querySelector('.bid-calculator-figure'),
+    label: container.querySelector('.bid-calculator-label'),
     note: container.querySelector('.bid-calculator-note'),
     premium: inputs[1],
     presetName: inputs.at(-1),
@@ -384,12 +386,12 @@ test('the calculator has VAT on premium and platform fee fields, and names both 
   calculator.premium.value = '25';
   vat.value = '19';
   await vat.emit('input');
-  assert.match(calculator.output.textContent, /Premium CHF\s?250\.00 \+ VAT CHF\s?47\.50/);
-  assert.match(calculator.output.textContent, /Total CHF\s?1,297\.50/);
-  assert.doesNotMatch(calculator.output.textContent, /Platform fee/, 'a platform fee nobody entered is not listed');
+  assert.match(calculator.output.textContent, /premium CHF\s?250\.00 \(25%\) · VAT on premium CHF\s?47\.50/);
+  assert.match(calculator.figure.textContent, /^CHF\s?1,297\.50$/);
+  assert.doesNotMatch(calculator.output.textContent, /platform fee/, 'a platform fee nobody entered is not listed');
   platform.value = '3';
   await platform.emit('input');
-  assert.match(calculator.output.textContent, /Platform fee CHF\s?30\.00/);
+  assert.match(calculator.output.textContent, /platform fee CHF\s?30\.00/);
   assert.doesNotMatch(calculator.note.textContent, /Tax is excluded/);
 });
 
@@ -519,8 +521,8 @@ test('the calculator adds import VAT, names it, and starts it from Settings for 
   calculator.premium.value = '25';
   calculator.field('Shipping').value = '15';
   await importVat.emit('input');
-  assert.match(calculator.output.textContent, /Import VAT €63\.25/);
-  assert.match(calculator.output.textContent, /Total €1,328\.25/);
+  assert.match(calculator.output.textContent, /import VAT €63\.25 · shipping €15\.00/);
+  assert.equal(calculator.figure.textContent, '€1,328.25');
   currency.value = 'GBP'; await currency.emit('input');
   assert.equal(importVat.value, '5.00', 'a rate the collector has seen in a calculation stays until they change it');
   importVat.value = ''; await importVat.emit('input');
@@ -543,4 +545,26 @@ test('a fee sheet read from its fields is null when blank, and names the field a
   assert.equal(feeSheetEstimate({ importVat: '120' }, { currency: 'EUR' }).error.field, 'importVat');
   assert.deepEqual(feeSheetTexts({ shippingMinor: 1500, paymentFeeBps: 0, importVatBps: 500 }),
     { premiumVat: '', platformFee: '', importVat: '5.00', shipping: '15.00', paymentPercent: '0.00', paymentFixed: '' });
+});
+
+// G-15: the answer is a stat block like the median's - what it is, the figure, one line of what makes it up with the
+// lines that are nothing left out - and no card or heading of its own inside the Calculator tab.
+test('the calculator answers with a labelled figure and one line, and in budget mode the figure is the hammer', async () => {
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } } });
+  assert.equal(calculator.container.querySelector('h3'), null, 'the tab is the heading');
+  assert.equal(calculator.figure.hidden, true);
+  calculator.field('Currency').value = 'USD';
+  calculator.field('Hammer price').value = '260';
+  calculator.premium.value = '20';
+  await calculator.premium.emit('input');
+  assert.deepEqual([calculator.label.textContent, calculator.figure.textContent, calculator.output.textContent],
+    ['All-in total', '$312.00', 'Hammer $260.00 · premium $52.00 (20%) · no fees']);
+  const mode = calculator.field('Calculation');
+  mode.value = 'budget'; await mode.emit('change');
+  calculator.field('Total budget').value = '312';
+  await calculator.premium.emit('input');
+  assert.deepEqual([calculator.label.textContent, calculator.figure.textContent, calculator.output.textContent],
+    ['Maximum hammer', '$260.00', 'All-in $312.00 · premium $52.00 (20%) · no fees']);
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  assert.equal(markup.getElementById('companion-bid-calculator').className, '', 'no card inside the tab');
 });

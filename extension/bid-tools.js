@@ -303,6 +303,20 @@ export function buildBidCalculation(input) {
   };
 }
 
+// The one line under the calculator's figure: what makes it up, the premium with its rate, each fee that is not
+// nothing in the fee sheet's order ("no fees" when there is none), and the next valid bid where the hammer is off the
+// grid. In budget mode the figure is the hammer, so the line starts with what it costs all in.
+export function calculationLine(calculated, mode, locale = 'en-US') {
+  const value = calculated.value;
+  const money = (amount) => formatMoney(amount, locale);
+  const fees = [['premiumVat', 'VAT on premium'], ['platformFee', 'platform fee'], ['importVat', 'import VAT'], ['shipping', 'shipping'], ['paymentFee', 'payment fee']]
+    .filter(([key]) => value[key]?.minor > 0).map(([key, words]) => `${words} ${money(value[key])}`);
+  const rate = Number.isInteger(calculated.buyerPremiumBps) ? ` (${calculated.buyerPremiumBps / 100}%)` : '';
+  const next = calculated.nextValidBid && calculated.nextValidBid.minor !== value.hammer.minor ? [`next valid bid ${money(calculated.nextValidBid)}`] : [];
+  const lead = mode === 'budget' ? `All-in ${money(value.total)}` : `Hammer ${money(value.hammer)}`;
+  return [lead, `premium ${money(value.premium)}${rate}`, ...(fees.length ? fees : ['no fees']), ...next].join(' · ');
+}
+
 export function snapshotSupersedes(incoming, accepted) {
   const incomingRevision = Number.isInteger(incoming?.revision) ? incoming.revision : null;
   const acceptedRevision = Number.isInteger(accepted?.revision) ? accepted.revision : null;
@@ -365,7 +379,6 @@ export function mountBidCalculator(
 ) {
   if (!container?.replaceChildren) throw new TypeError('Calculator container is required.');
   const root = el('section', { className: `bid-calculator${compact ? ' compact' : ''}` });
-  const title = el('h3', { textContent: 'Bid calculator' });
   const mode = el('select');
   mode.append(
     el('option', { value: 'total', textContent: 'Total cost from hammer' }),
@@ -410,9 +423,14 @@ export function mountBidCalculator(
     label('Fixed payment fee', paymentFixed).node, label('Bid increment', increment).node,
     label('Minimum bid', minimum).node);
   fees.append(el('summary', { textContent: 'Fees and bid increments' }), feeFields);
+  // The answer is a stat block, as the median is (G-15): what it is, the figure, and one line of what makes it up.
+  const answer = el('div', { className: 'bid-calculator-answer' });
+  const answerLabel = el('p', { className: 'bid-calculator-label', textContent: 'All-in total' });
+  const figure = el('p', { className: 'bid-calculator-figure', hidden: true });
   const output = el('p', {
     className: 'bid-calculator-output', textContent: 'Enter an amount and buyer premium.',
   });
+  answer.append(answerLabel, figure, output);
   const note = el('p', {
     className: 'bid-calculator-note', textContent: 'VAT on premium is charged on the premium alone and a platform fee on the hammer alone, as houses and live-bidding platforms charge them; the percentage payment fee applies to everything else the invoice carries, shipping included. Import VAT or duty, when the coin crosses a border, is charged on hammer, premium and shipping and paid to the carrier or customs, so no payment fee is added to it; Settings can start it at your usual rate for a house in another currency than your default. Bid increment is a fixed grid you enter; a house preset can carry the tiered ladder you copied from that house’s own terms, and that ladder wins while it is selected and this calculator is set to the currency its tiers are written in. VAT on the hammer is excluded, and nothing is estimated where a field is blank.',
   });
@@ -437,7 +455,7 @@ export function mountBidCalculator(
   });
   editor.append(editorSummary, presetName, save);
   actions.append(use);
-  root.append(title, fields, fees, output, ladderNote, about, actions, editor, status);
+  root.append(fields, answer, ladderNote, fees, about, actions, editor, status);
   container.replaceChildren(root);
 
   let result = null;
@@ -518,7 +536,9 @@ export function mountBidCalculator(
       incrementText: increment.value, minimumText: minimum.value, ladder: ladder?.record ?? null,
       premiumVatText: premiumVat.value, platformFeeText: platformFee.value, importVatText: importVat.value,
       currency: currencyControl.value, locale: language() });
+    answerLabel.textContent = mode.value === 'budget' ? 'Maximum hammer' : 'All-in total';
     if (!calculated.ok) {
+      figure.hidden = true;
       output.textContent = 'Enter an amount and buyer premium.';
       if (!untouched) showError(calculated.error.message);
       return;
@@ -526,14 +546,9 @@ export function mountBidCalculator(
     const hammer = calculated.value.hammer;
     const locale = language();
     renderLadder(calculated);
-    const next = calculated.nextValidBid.minor === hammer.minor
-      ? '' : ` · Next valid bid ${formatMoney(calculated.nextValidBid, locale)}`;
-    // VAT and a platform fee are named only when entered, so a house without them reads as before.
-    const estimate = calculated.costEstimate;
-    const vat = Object.hasOwn(estimate, 'premiumVatBps') ? ` + VAT ${formatMoney(calculated.value.premiumVat, locale)}` : '';
-    const platform = Object.hasOwn(estimate, 'platformFeeBps') ? ` · Platform fee ${formatMoney(calculated.value.platformFee, locale)}` : '';
-    const imported = Object.hasOwn(estimate, 'importVatBps') ? ` · Import VAT ${formatMoney(calculated.value.importVat, locale)}` : '';
-    output.textContent = `Hammer ${formatMoney(hammer, locale)} · Premium ${formatMoney(calculated.value.premium, locale)}${vat}${platform}${imported} · Shipping ${formatMoney(calculated.value.shipping, locale)} · Payment fee ${formatMoney(calculated.value.paymentFee, locale)} · Total ${formatMoney(calculated.value.total, locale)}${next}`;
+    figure.textContent = formatMoney(mode.value === 'budget' ? hammer : calculated.value.total, locale);
+    figure.hidden = false;
+    output.textContent = calculationLine(calculated, mode.value, locale);
     result = { hammer, buyerPremiumBps: calculated.buyerPremiumBps, costEstimate: calculated.costEstimate, total: calculated.value.total };
     use.disabled = false;
   };
