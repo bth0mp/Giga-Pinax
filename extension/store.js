@@ -769,11 +769,12 @@ function mutation(snapshot, command, context) {
       break;
     }
     case 'want.delete': {
-      const found = findRecord(next.wants ?? [], command.wantId, command.expectedRevision, 'want');
+      const wants = next.wants ?? [];
+      const found = findRecord(wants, command.wantId, command.expectedRevision, 'want');
       if (!found.ok) return found;
       value = found.value.record;
-      next.wants.splice(found.value.index, 1);
-      if (!next.wants.length) delete next.wants;
+      wants.splice(found.value.index, 1);
+      if (!wants.length) delete next.wants;
       break;
     }
     // Found: the won coin that answered the want, and when; `lotId: null` takes it back. Only a coin won here can be named,

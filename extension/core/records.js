@@ -604,6 +604,7 @@ const WANT_GRADE_SET = new Set(WANT_GRADES);
 export function validateWant(want, path = 'want') {
   const common = commonRecord(want, path);
   if (!common.ok) return common;
+  /** @type {Array<Result<any>>} */
   const checks = [
     stringResult(want.reference, `${path}.reference`, LIMITS.shortText),
     optionalString(want, 'notes', path, LIMITS.notes),
@@ -1283,7 +1284,7 @@ function validateRoot(value) {
   if (!header.ok) return header;
 
   const collectionFailure = firstFailure(...COLLECTIONS.map(({ key, maximum, validator, optional }) =>
-    (optional && !OWN(value, key) ? { ok: true } : validateCollection(value, key, maximum, validator))));
+    (optional && !OWN(value, key) ? /** @type {Result<any>} */ ({ ok: true, value: undefined }) : validateCollection(value, key, maximum, validator))));
   if (!collectionFailure.ok) return collectionFailure;
 
   const events = new Map(value.auctionEvents.map((event) => [event.id, event]));
