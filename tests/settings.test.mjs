@@ -1511,3 +1511,14 @@ test('a theme and the photos switch chosen before the settings load are kept whe
   assert.equal(page.stored.get('giga-pinax-theme-v1'), 'dark');
   assert.equal(page.stored.get('giga-pinax-specimen-photos-v1'), 'on');
 });
+
+// H-12 (cycle 5, Settings part): one filled button per form. Save settings is the page's action, and Confirm import the
+// import preview's; Export backup and the update link are secondary, as every other action on the page is.
+test('Settings fills only its Save settings and Confirm import buttons', () => {
+  const markup = parseHtmlFile(new URL('../extension/settings.html', import.meta.url));
+  const quiet = ['secondary', 'quiet', 'danger', 'text-button'];
+  const filled = [...markup.querySelectorAll('button'), ...markup.querySelectorAll('a.button')]
+    .filter((control) => !quiet.some((kind) => String(control.getAttribute('class') ?? '').split(/\s+/).includes(kind)))
+    .map((control) => control.id);
+  assert.deepEqual(filled.sort(), ['confirm-import', 'save-settings']);
+});
