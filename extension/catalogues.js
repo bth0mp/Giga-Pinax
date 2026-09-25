@@ -214,6 +214,10 @@ export const EXTRA_SPELLINGS = Object.freeze([
   ['konstantin der große', 'constantine_i'], ['constantin ier', 'constantine_i'], ['constantin i', 'constantine_i'],
   ['costantino i', 'constantine_i'], ['constantino i', 'constantine_i'], ['konstantin ii', 'constantine_ii'], ['constantin ii', 'constantine_ii'],
   ['costantino ii', 'constantine_ii'], ['constantino ii', 'constantine_ii'],
+  // The Spanish houses (Soler y Llach, Áureo, Tauler & Fau) head a lot with these, in capitals; the accent is folded away, so "Cómodo" is "comodo".
+  ['augusto', 'augustus'], ['tiberio', 'tiberius'], ['claudio', 'claudius'], ['tito', 'titus'], ['domiciano', 'domitian'],
+  ['antonino pio', 'antoninus_pius'], ['marco aurelio', 'marcus_aurelius'], ['comodo', 'commodus'], ['septimio severo', 'septimius_severus'],
+  ['juliano ii', 'julian_the_apostate'],
 ].map((entry) => Object.freeze(entry)));
 const PERSON_BY_ID = new Map(RIC_PEOPLE.map((person) => [person.id, person]));
 for (const [spelling, id] of EXTRA_SPELLINGS) if (PERSON_BY_ID.has(id)) own(spelling, PERSON_BY_ID.get(id));

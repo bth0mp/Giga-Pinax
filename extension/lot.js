@@ -405,14 +405,15 @@ function headingMints(text) {
 
 // The longest names first, each blanked once found, so "Claudius Gothicus" is not also Claudius; several are kept in text order ("Claudius with Nero").
 // A regnal numeral the name doesn't carry makes it someone else ("Claudius II" is not Claudius), and titles name no one: "as Caesar", "as Augustus",
-// a lower-case "augustus", "Divus", and the Maximus in "Magnus Maximus" (a RIC IX person with no section here).
+// a lower-case "augustus", "Divus", and the Maximus in "Magnus Maximus" (a RIC IX person with no section here). The Spanish and Italian houses
+// write the title their own way ("como Augusto", "come Cesare"), where "Augusto" is also Augustus's own name.
 // Elagabal is also the god of Emesa, whose sacred stone the coins of Elagabalus and of Uranius Antoninus show: "the stone of Elagabal", "Stein des
 // Elagabal", "la pierre d'Élagabal", "Sol Elagabal", "Stein des Gottes Elagabal", "Piedra sagrada de Elagabal" name the god, and the man they would
 // name is then someone else's coin. One word may stand between the noun and its preposition ("sacred", "sagrada"). "Elagabal in quadriga" is left
 // the emperor's: he rides one on his own coins as often as the stone does.
 const GOD = /\b(?:stone|baetyl|betyl|betyle|betilo|stein|pierre|pietra|piedra|god|gott|gottes|dieu|dio|dios|deus|sol|temple|tempel|tempio|templo)(?:\s+[a-z]+)?\s+(?:(?:of|des|du|di|del|de)\s+)?(?:the\s+)?(?:(?:god|gott|gottes|dieu|dio|dios|deus)\s+)?(?:d')?elagabal(?:us)?(?![a-z])/gi;
 function rulersIn(text) {
-  let rest = fold(text).replace(/\bDiv(?:us|a)\b|\bas\s+(?:Caesar|Augustus)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '').replace(GOD, '');
+  let rest = fold(text).replace(/\bDiv(?:us|a)\b|\b(?:as|como|come)\s+(?:Caesar|Cesare?|Augustus|Augusto)\b/gi, '').replace(/\baugust(?:us|a)\b/g, '').replace(GOD, '');
   // Nomisma knows two thousand spellings, more than any heading can hold: a name whose first word is nowhere in the text cannot match, and that one
   // substring test costs a fraction of running its pattern. Blanking only ever removes text, so the test is safe against the original.
   const lower = rest.toLowerCase();

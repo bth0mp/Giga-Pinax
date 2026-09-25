@@ -1555,3 +1555,28 @@ test('a Tauler & Fau lot reads "(Ric-II 118)" as RIC II 118', () => {
   assert.deepEqual(findReferences('Nero. As. 62-68 AD. Rome. (Ric-I 306). (Wcn-275).').references[0].reference, ric('306', 'I'));
   assert.deepEqual(findReferences('Antoninus Pius. Sestertius. 145-161 AD. Rome. (Ric-III 772). (Bmcre-1655).').references[0].reference, ric('772', 'III'));
 });
+
+// Loop V-07: Soler y Llach, Áureo and Tauler & Fau head their lots with the Spanish name, in capitals ("AUGUSTO. Denario. … Lugdunum. (RIC 207;
+// RSC 43)"). Ten of RIC's emperors were read by nobody, so the mint alone was the section and an Augustus denarius was offered as RIC VI–VIII
+// Lugdunum 207. Each spelling names its one person, with its accent or without, in capitals or in title case, never in lower case.
+test('a Spanish heading names its emperor, and a lower-case word or another numeral names nobody', () => {
+  const rulers = (text) => findReferences(text).rulers;
+  for (const [heading, expected] of [
+    ['AUGUSTO', ['Augustus']], ['Augusto', ['Augustus']], ['TIBERIO', ['Tiberius']], ['CLAUDIO', ['Claudius']], ['TITO', ['Titus']],
+    ['DOMICIANO', ['Domitian']], ['ANTONINO PÍO', ['Antoninus Pius']], ['ANTONINO PIO', ['Antoninus Pius']], ['Antonino Pío', ['Antoninus Pius']],
+    ['MARCO AURELIO', ['Marcus Aurelius']], ['CÓMODO', ['Commodus']], ['COMODO', ['Commodus']], ['Cómodo', ['Commodus']],
+    ['SEPTIMIO SEVERO', ['Septimius Severus']], ['JULIANO II', ['Julian the Apostate']],
+  ]) assert.deepEqual(rulers(`${heading}. Denario. (Ar. 3,73g/19mm). Roma. (RIC 12; RSC 43).`), expected, heading);
+  assert.deepEqual(rulers('AUGUSTO. Denario. (Ar. 3,73g/19mm). 2 a.C.-4 d.C. Lugdunum. (RIC 207; RSC 43). Anv: Cabeza laureada de Augusto a derecha.'),
+    ['Augustus']);
+  // Another emperor's numeral makes him someone else, a lower-case word is the adjective, and the title he holds is no second ruler.
+  assert.deepEqual(rulers('CLAUDIO II. Antoniniano. RIC 12.'), []);
+  assert.deepEqual(rulers('JULIANO. Denario. RIC 12.'), []);
+  assert.deepEqual(rulers('Retrato augusto. Denario. RIC 12.'), []);
+  for (const spelling of ['augusto', 'tiberio', 'claudio', 'tito', 'domiciano', 'antonino pio', 'marco aurelio', 'comodo', 'septimio severo', 'juliano ii']) {
+    assert.deepEqual(rulers(`Denario, ${spelling}. RIC 12.`), [], spelling);
+  }
+  assert.deepEqual(rulers('CONSTANTINO I como Augusto. Follis. RIC VII 12.'), ['Constantine I']);
+  assert.deepEqual(rulers('Constantino II como César. Follis. RIC VII 12.'), ['Constantine II']);
+  assert.deepEqual(rulers('Tiberio come Augusto. Asse. RIC 12.'), ['Tiberius']);
+});
