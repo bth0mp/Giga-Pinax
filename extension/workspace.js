@@ -784,8 +784,12 @@ async function initWorkspace() {
   const COIN_WINDOW = 60;
   let coinWindow = { key: null, shown: COIN_WINDOW };
   let coinMoreWatch = null;
-  function coinRow(lot, event, needingOutcome) {
+  let showCoinMore = null;
+  $('lot-more').addEventListener('click', () => showCoinMore?.(true));
+  function coinRow(lot, event, needingOutcome, position, size) {
     const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id)); row.dataset.lotId = lot.id;
+    // Its place in the whole list, not in the rows drawn so far (review Minor 4).
+    row.setAttribute('aria-posinset', String(position)); row.setAttribute('aria-setsize', String(size));
     const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
     const amount = lotRowAmountLabel(lot, money); if (amount) top.append(text('span', amount, 'coin-row-amount'));
     const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
@@ -828,38 +832,48 @@ async function initWorkspace() {
     const windowKey = `${$('lot-queue').value}|${$('lot-filter').value}`;
     if (coinWindow.key !== windowKey) coinWindow = { key: windowKey, shown: COIN_WINDOW };
     // All coins and Completed span years: a month heading where the auction month changes gives the scroll landmarks.
+    // Each month is a group of the listbox, named by its heading, so the listbox holds options alone (review Minor 4).
     const headed = ['all-coins', 'completed'].includes($('lot-queue').value);
-    let month = null;
+    let month = null; let group = list;
     const appendRows = (from, to) => {
-      for (const lot of visibleLots.slice(from, to)) {
+      visibleLots.slice(from, to).forEach((lot, offset) => {
         const event = eventsById.get(lot.auctionEventId);
         if (headed) {
           const heading = monthHeading(event, navigator.language);
-          if (heading !== month) { month = heading; const line = text('p', heading, 'coin-month'); line.setAttribute('role', 'presentation'); list.append(line); }
+          if (heading !== month) {
+            month = heading;
+            group = text('div', '', 'coin-month-group'); group.setAttribute('role', 'group'); group.setAttribute('aria-label', heading);
+            const line = text('p', heading, 'coin-month'); line.setAttribute('aria-hidden', 'true'); group.append(line);
+            list.append(group);
+          }
         }
-        list.append(coinRow(lot, event, needingOutcome));
-      }
+        group.append(coinRow(lot, event, needingOutcome, from + offset + 1, visibleLots.length));
+      });
     };
     appendRows(0, coinWindow.shown);
-    if (visibleLots.length > coinWindow.shown) {
-      const more = text('button', '', 'quiet coin-more'); more.type = 'button';
-      const label = () => { const left = visibleLots.length - coinWindow.shown; more.textContent = `Show ${Math.min(left, COIN_WINDOW)} more (${left} not shown)`; };
-      label();
-      const showMore = () => {
-        const from = coinWindow.shown; coinWindow.shown += COIN_WINDOW;
-        more.remove(); appendRows(from, coinWindow.shown);
-        if (visibleLots.length > coinWindow.shown) { label(); list.append(more); } else { coinMoreWatch?.disconnect(); coinMoreWatch = null; }
-        updateComparisonControls();
-      };
-      more.addEventListener('click', showMore);
-      list.append(more);
-      // Scrolling to the end of the list shows the next rows by itself, where the browser can tell.
+    // Show more follows the list, outside it (review Minor 4): pressed, it hands the keyboard to the first row it drew and
+    // says how many (Minor 3); scrolling to the last row drawn does the same without moving the keyboard.
+    const more = $('lot-more');
+    const label = () => { const left = visibleLots.length - coinWindow.shown; more.textContent = `Show ${Math.min(left, COIN_WINDOW)} more (${left} not shown)`; more.hidden = left <= 0; };
+    const watchLastRow = () => {
       coinMoreWatch?.disconnect(); coinMoreWatch = null;
-      if (typeof IntersectionObserver === 'function') {
-        coinMoreWatch = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && more.isConnected) showMore(); }, { rootMargin: '200px' });
-        coinMoreWatch.observe(more);
-      }
-    } else { coinMoreWatch?.disconnect(); coinMoreWatch = null; }
+      if (more.hidden || typeof IntersectionObserver !== 'function') return;
+      const rows = list.querySelectorAll('.coin-row-wrap'); const last = rows[rows.length - 1];
+      if (!last) return;
+      coinMoreWatch = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) showCoinMore?.(false); }, { rootMargin: '200px' });
+      coinMoreWatch.observe(last);
+    };
+    showCoinMore = (fromButton) => {
+      if (visibleLots.length <= coinWindow.shown) return;
+      const from = coinWindow.shown; coinWindow.shown += COIN_WINDOW;
+      appendRows(from, coinWindow.shown);
+      label(); updateComparisonControls(); watchLastRow();
+      if (!fromButton) return;
+      const shown = Math.min(coinWindow.shown, visibleLots.length) - from;
+      list.querySelectorAll('.coin-row')[from]?.focus();
+      $('announcement').textContent = `${shown} more coin${shown === 1 ? '' : 's'} shown`;
+    };
+    label(); watchLastRow();
     updateComparisonControls();
   }
   // Toggling a coin changes only the controls, never the checkbox the collector is standing on. The boxes show while any

@@ -2178,7 +2178,7 @@ test('a long coin list draws sixty rows, shows more on request, and heads All co
   }
   const page = await mountWorkspace({ background, hash: '#watchlist' });
   const rows = () => page.$('lot-list').querySelectorAll('.coin-row');
-  const more = () => page.$('lot-list').querySelector('.coin-more');
+  const more = () => (page.$('lot-more').hidden ? null : page.$('lot-more'));
   assert.equal(page.$('lot-count').textContent, '130 of 130 coins');
   assert.equal(rows().length, 60);
   assert.equal(more().textContent, 'Show 60 more (70 not shown)');
@@ -2188,7 +2188,7 @@ test('a long coin list draws sixty rows, shows more on request, and heads All co
   assert.equal(more().textContent, 'Show 10 more (10 not shown)');
   await more().click(); await settle();
   assert.equal(rows().length, 130);
-  assert.equal(more(), null);
+  assert.ok(more() === null, 'nothing left to show');
   // A queue starts again at its first window, and All coins is headed by month.
   page.$('lot-queue').value = 'all-coins'; await page.$('lot-queue').emit('change'); await settle();
   assert.equal(rows().length, 60);
@@ -2202,7 +2202,7 @@ test('a long coin list draws sixty rows, shows more on request, and heads All co
   assert.equal(named.$('selected-title').textContent, 'Coin 130');
   assert.equal(named.$('lot-list').querySelectorAll('.coin-row').length, 60);
   assert.deepEqual(marked(), []);
-  for (let round = 0; round < 2; round += 1) { await named.$('lot-list').querySelector('.coin-more').click(); await settle(); }
+  for (let round = 0; round < 2; round += 1) { await named.$('lot-more').click(); await settle(); }
   assert.deepEqual(marked(), [last.id]);
 });
 
@@ -2475,4 +2475,43 @@ test('a set Search opens by itself does not stop the filter following the defaul
   assert.equal(fromCoin.$('evidence-currency').value, 'CHF');
   await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Another', sourceLinks: [] } }); await settle();
   assert.equal(fromCoin.$('evidence-currency').value, 'CHF', 'still CHF after a snapshot');
+});
+
+// Fix round, Minors 3 and 4 (K-06): the coin list holds only its options, each saying its place in the whole list; the
+// months are groups; Show more sits after the list, and moves the keyboard to the first new row and says so.
+async function backgroundWithLongList() {
+  const background = await createWorkspaceBackground();
+  const march = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Roma 40', eventKind: 'auction-starts', precision: 'timed', localDate: '2026-03-10', localTime: '14:00', timeZone: 'Europe/London', reminderScope: 'standalone', reminders: [] } });
+  for (let index = 1; index <= 130; index += 1) {
+    const reply = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: `Coin ${String(index).padStart(3, '0')}`, sourceLinks: [], ...(index <= 70 ? { auctionEventId: march.value.id } : {}) } });
+    assert.equal(reply.ok, true, reply.message);
+  }
+  return background;
+}
+test('the coin list holds only its options, numbered in the whole list, with Show more after it', async () => {
+  const background = await backgroundWithLongList();
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  const list = page.$('lot-list');
+  assert.ok(list.querySelector('.coin-more') === null, 'no button inside the listbox');
+  assert.equal(list.querySelectorAll('p').length, 0, 'no paragraph inside the listbox');
+  const more = page.$('lot-more');
+  assert.ok(more, 'a Show more button after the list');
+  assert.equal(more.hidden, false);
+  assert.equal(more.textContent, 'Show 60 more (70 not shown)');
+  const rows = () => list.querySelectorAll('.coin-row');
+  assert.deepEqual([rows()[0].getAttribute('aria-posinset'), rows()[0].getAttribute('aria-setsize')], ['1', '130']);
+  page.$('lot-queue').value = 'all-coins'; await page.$('lot-queue').emit('change'); await settle();
+  const groups = list.children;
+  assert.ok(groups.length > 0 && groups.every((node) => node.getAttribute('role') === 'group'), 'All coins is grouped by month');
+  assert.equal(groups[0].getAttribute('aria-label'), 'March 2026');
+  assert.equal(groups[0].querySelector('.coin-month').getAttribute('aria-hidden'), 'true');
+  await more.click(); await settle();
+  assert.equal(rows().length, 120);
+  assert.deepEqual([rows()[60].getAttribute('aria-posinset'), rows()[60].getAttribute('aria-setsize')], ['61', '130']);
+  // Minor 3: the keyboard moves to the first row drawn, and the page says how many were.
+  assert.ok(page.document.activeElement === rows()[60], 'the first new row has the keyboard');
+  assert.equal(page.$('announcement').textContent, '60 more coins shown');
+  await more.click(); await settle();
+  assert.equal(rows().length, 130);
+  assert.equal(more.hidden, true);
 });
