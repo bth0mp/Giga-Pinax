@@ -409,6 +409,8 @@ function reminderResult(reminder, path) {
       TIME.test(reminder.localTime)
         ? { ok: true, value: reminder.localTime }
         : failure('invalid-time', 'Expected HH:mm.', `${path}.localTime`),
+      // Q-19: the collector's zone, where the reminder rings on their clock (reminders.js).
+      OWN(reminder, 'collectorTimeZone') ? timeZoneResult(reminder.collectorTimeZone, `${path}.collectorTimeZone`) : { ok: true },
     );
   }
   return failure('invalid-enum', 'Unknown reminder kind.', `${path}.kind`);
@@ -472,7 +474,8 @@ export function validateEventLocalTimes(event, path = 'event') {
   const reminders = Array.isArray(event.reminders) ? event.reminders : [];
   for (let index = 0; index < reminders.length; index += 1) {
     const reminder = reminders[index];
-    if (reminder?.kind !== 'wall-time' || !TIME.test(reminder.localTime) ||
+    // A reminder that rings on the collector's clock (Q-19) never needs its time to exist in the auction's zone.
+    if (reminder?.kind !== 'wall-time' || !TIME.test(reminder.localTime) || OWN(reminder, 'collectorTimeZone') ||
         !Number.isSafeInteger(reminder.daysBefore)) continue;
     const shifted = dateResult(event.localDate, `${path}.localDate`).ok
       ? shiftDate(event.localDate, -reminder.daysBefore) : null;
