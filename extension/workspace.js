@@ -24,7 +24,7 @@ import {
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
   decidingBidLine, filterWorkspaceLots, sameReference, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
-  monthHeading, wantListRows, wonCostLine,
+  monthHeading, relativeToShow, splitAuctions, wantListRows, wonCostLine,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -83,7 +83,7 @@ async function initWorkspace() {
   const eventLine = (event, className, tag = 'span', withName = true) => {
     const line = text(tag, '', className);
     if (!event) { line.textContent = 'No auction attached'; return line; }
-    const { when, relative, tone } = eventWhen(event, view());
+    const said = eventWhen(event, view()); const { when, tone } = said; const relative = relativeToShow(event, said);
     line.append(document.createTextNode(withName ? `${event.name} · ${when}` : when));
     if (relative) { line.append(document.createTextNode(' · ')); line.append(text('span', relative, `when-relative${tone ? ` when-${tone}` : ''}`)); }
     return line;
@@ -1188,14 +1188,30 @@ async function initWorkspace() {
     const list = $('event-list'); list.replaceChildren();
     const coinCounts = new Map();
     for (const lot of snapshot.lots ?? []) if (lot.auctionEventId) coinCounts.set(lot.auctionEventId, (coinCounts.get(lot.auctionEventId) ?? 0) + 1);
-    if (!(snapshot.auctionEvents ?? []).length) list.append(emptyState('No auctions yet', 'An auction keeps a sale\u2019s date, time zone and reminders for the coins attached to it.', { label: 'Add auction', run: () => $('new-event').click() }));
-    for (const event of snapshot.auctionEvents ?? []) {
+    const events = snapshot.auctionEvents ?? [];
+    if (!events.length) list.append(emptyState('No auctions yet', 'An auction keeps a sale\u2019s date, time zone and reminders for the coins attached to it.', { label: 'Add auction', run: () => $('new-event').click() }));
+    const eventRow = (event) => {
       const row = text('button', '', 'event-row'); row.type = 'button';
       const top = text('span', '', 'event-row-top'); top.append(text('strong', event.name, 'event-row-name'), text('span', 'Edit', 'event-row-edit'));
       const count = coinCounts.get(event.id) ?? 0;
       row.append(top, eventLine(event, 'event-row-when', 'span', false), text('span', count ? `${count} coin${count === 1 ? '' : 's'}` : 'No coins attached', 'event-row-coins'));
       row.addEventListener('click', () => openEventEditor(event));
-      list.append(row);
+      return row;
+    };
+    // Upcoming first, soonest at the top; the sales that have passed folded beneath, newest first, and open only when
+    // nothing is to come (K-07). Past twenty auctions a filter box finds one by name.
+    $('event-filter-label').hidden = events.length <= 20;
+    const needle = events.length > 20 ? $('event-filter').value.trim().toLocaleLowerCase() : '';
+    const { upcoming, past } = splitAuctions(events.filter((event) => !needle || String(event.name ?? '').toLocaleLowerCase().includes(needle)));
+    for (const event of upcoming) list.append(eventRow(event));
+    if (needle && !upcoming.length && !past.length) list.append(text('p', 'No auctions match this filter.', 'empty-row'));
+    if (past.length) {
+      const fold = document.createElement('details'); fold.className = 'past-auctions'; fold.id = 'past-auctions';
+      fold.open = Boolean(needle) || (pastAuctionsOpen ?? !upcoming.length);
+      fold.addEventListener('toggle', () => { if (!needle) pastAuctionsOpen = fold.open; });
+      fold.append(text('summary', `Past auctions (${past.length})`));
+      for (const event of past) fold.append(eventRow(event));
+      list.append(fold);
     }
     // A reminder that went off while the browser was closed is missed: listed with the due ones, acknowledged with
     // them, and never snoozed back into a moment already past. Each says which reminder, when it went off in the
@@ -1222,6 +1238,9 @@ async function initWorkspace() {
     $('snooze-alerts').dataset.ids = due.filter((item) => item.status !== 'missed').map((item) => item.triggerId ?? item.id).join(',');
     if (bridge) { $('ack-alerts').disabled = !due.length; $('snooze-alerts').disabled = !$('snooze-alerts').dataset.ids; }
   }
+  // Whether the collector opened or closed Past auctions: kept for this page, as they left it.
+  let pastAuctionsOpen = null;
+  $('event-filter').addEventListener('input', () => renderEvents());
   // Opening the auction editor from anywhere but a coin's "Add auction" drops the coin it would
   // otherwise attach itself to when saved.
   const openEventEditor = (event) => { eventReturnLot = null; zoneChosen = false; $('event-action-status').replaceChildren(); $('event-form').hidden = false; $('delete-event').hidden = !event; beginEditor('event', event ? { id: event.id, revision: event.revision, record: structuredClone(event) } : { id: null, revision: null, record: null }); if (event) populateEventForm(event); else { $('event-form').reset(); $('event-form').elements.id.value = ''; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); updateEventSummary(); } $('event-form').scrollIntoView({ behavior: 'smooth', block: 'start' }); $('event-form').elements.name.focus(); };

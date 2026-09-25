@@ -602,14 +602,14 @@ test('a coin row shows its amount beside the title, the auction’s time and how
   const [row] = page.$('lot-list').children;
   assert.equal(row.querySelector('.coin-row-title').textContent, 'RIC I² 306');
   assert.equal(row.querySelector('.coin-row-amount').textContent, '£650.00');
-  assert.match(row.querySelector('.coin-row-when').textContent, /^Closes Tue, Oct 1, 3:00 PM( London)? · in \d+ days$/);
+  assert.match(row.querySelector('.coin-row-when').textContent, /^Closes Tue, Oct 1, 2030, 3:00 PM( London)? · in \d+ days$/);
   assert.equal(row.querySelector('.status-pill').textContent, 'Bid active');
   assert.equal(row.querySelector('.coin-row-event').textContent, 'Roma E-Sale 130');
   assert.equal(row.querySelector('.status-pill').dataset.tone, 'active');
   await page.openCoin('Nero, denarius');
-  assert.match(page.$('attached-event').textContent, /^Roma E-Sale 130 · Closes Tue, Oct 1, 3:00 PM( London)? · in \d+ days$/);
+  assert.match(page.$('attached-event').textContent, /^Roma E-Sale 130 · Closes Tue, Oct 1, 2030, 3:00 PM( London)? · in \d+ days$/);
   await page.navigate('#auctions');
-  assert.match(page.$('event-list').textContent, /Closes Tue, Oct 1, 3:00 PM( London)? · in \d+ days/);
+  assert.match(page.$('event-list').textContent, /Closes Tue, Oct 1, 2030, 3:00 PM( London)? · in \d+ days/);
 });
 
 // N3: on an open lot the Outcome tab opens on Won in the bid's currency, asks no re-open question and offers no
@@ -778,7 +778,7 @@ test('the Reminders tab shows the attached auction and offers the standard remin
   const page = await mountWorkspace({ background, hash: '#watchlist' });
   await page.openCoin('Nero, denarius');
   const tab = page.$('selected-reminders');
-  assert.match(tab.querySelector('.reminder-event').textContent, /^Roma E-Sale 130 · Closes Tue, Oct 1, 3:00 PM/);
+  assert.match(tab.querySelector('.reminder-event').textContent, /^Roma E-Sale 130 · Closes Tue, Oct 1, 2030, 3:00 PM/);
   assert.ok(tab.textContent.includes('No reminders set.'));
   const add = page.$('add-standard-reminders');
   assert.equal(add.textContent, 'Add the standard two (1 day and 1 hour before)');
@@ -2202,4 +2202,27 @@ test('a long coin list draws sixty rows, shows more on request, and heads All co
   assert.deepEqual(marked(), []);
   for (let round = 0; round < 2; round += 1) { await named.$('lot-list').querySelector('.coin-more').click(); await settle(); }
   assert.deepEqual(marked(), [last.id]);
+});
+
+// K-07: the Auctions page lists the sales to come first, soonest first, and folds the past ones beneath, newest first;
+// past twenty it offers a filter box.
+test('the Auctions page lists upcoming sales first and folds the past ones, newest first, with a filter past twenty', async () => {
+  const background = await createWorkspaceBackground();
+  const auction = (name, localDate) => background.send({ type: 'event.save', expectedRevision: null, event: { name, eventKind: 'auction-starts', precision: 'timed', localDate, localTime: '10:00', timeZone: 'Europe/London', reminderScope: 'standalone', reminders: [] } });
+  for (const [name, date] of [['Roma 20', '2021-09-26'], ['Nomos 40', '2030-03-01'], ['CNG 101', '2021-10-08'], ['Künker 400', '2029-06-10']]) assert.equal((await auction(name, date)).ok, true);
+  const page = await mountWorkspace({ background, hash: '#auctions' });
+  const names = (root) => root.querySelectorAll('.event-row-name').map((node) => node.textContent);
+  const fold = () => page.$('past-auctions');
+  assert.deepEqual(page.$('event-list').children.filter((node) => node.classList.contains('event-row')).map((row) => row.querySelector('.event-row-name').textContent), ['Künker 400', 'Nomos 40']);
+  assert.equal(fold().querySelector('summary').textContent, 'Past auctions (2)');
+  assert.equal(fold().open, false, 'folded while something is to come');
+  assert.deepEqual(names(fold()), ['CNG 101', 'Roma 20']);
+  assert.equal(fold().querySelector('.event-row-when').textContent, 'Started Fri, Oct 8, 2021, 10:00 AM', 'past once, with its year');
+  assert.equal(page.$('event-filter-label').hidden, true, 'no filter for four auctions');
+  for (let index = 0; index < 18; index += 1) assert.equal((await auction(`Leu Web ${index}`, '2022-05-01')).ok, true);
+  await settle();
+  assert.equal(page.$('event-filter-label').hidden, false);
+  page.$('event-filter').value = 'cng'; await page.$('event-filter').emit('input'); await settle();
+  assert.deepEqual(names(page.$('event-list')), ['CNG 101']);
+  assert.equal(fold().open, true, 'a filter opens the past auctions it found');
 });

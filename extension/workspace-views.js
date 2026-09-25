@@ -91,6 +91,9 @@ const OPEN_OUTCOME = (lot) => !lot?.outcome?.status || lot.outcome.status === 'o
 /** The collector's own time zone, as the browser reports it. */
 export const viewerTimeZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; } };
 const VERB = { 'lot-closes': 'Closes', 'auction-starts': 'Starts', 'auction-day': 'Sale day' };
+// A sale that has passed is written in the past tense once (K-07): the verb says it, so no relative word follows it,
+// except a sale day, whose name has no tense.
+const PAST_VERB = { 'lot-closes': 'Closed', 'auction-starts': 'Started', 'auction-day': 'Sale day' };
 const PAST_WORD = { 'lot-closes': 'closed', 'auction-starts': 'started', 'auction-day': 'ended' };
 // A format in the browser's language, or the ISO text the record holds where the language or zone cannot be used.
 // Building a format is most of what writing a date costs, and a list of 800 coins writes thousands (K-05): each is built
@@ -114,17 +117,21 @@ const formatWith = (locale, options, date, fallback) => {
  */
 export function eventWhen(event, { now = new Date().toISOString(), locale = 'en-US', timeZone = viewerTimeZone() } = {}) {
   if (!event?.localDate) return { when: 'Time unknown', relative: '', tone: '' };
-  const verb = VERB[String(event.eventKind)] ?? 'Auction';
-  const zone = event.timeZone && !oneZone(event.timeZone, timeZone) ? ` ${placeOf(event.timeZone)}` : '';
   const timing = eventTiming(event, now);
+  const past = timing.state === 'ended' || timing.state === 'started';
+  const verb = (past ? PAST_VERB : VERB)[String(event.eventKind)] ?? 'Auction';
+  const zone = event.timeZone && !oneZone(event.timeZone, timeZone) ? ` ${placeOf(event.timeZone)}` : '';
   const timed = event.precision === 'timed' && Number.isFinite(Date.parse(String(event.startsAt)));
+  // The year is written whenever it is not this one (K-07): a 2021 sale never reads as this September's.
+  const thisYear = formatWith('en-CA', { year: 'numeric', timeZone }, new Date(now), String(now).slice(0, 4));
+  const year = String(event.localDate).slice(0, 4) !== thisYear ? { year: 'numeric' } : {};
   const day = timed
-    ? formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: event.timeZone }, new Date(String(event.startsAt)), event.localDate)
-    : formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }, new Date(`${event.localDate}T12:00:00Z`), event.localDate);
+    ? formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', ...year, timeZone: event.timeZone }, new Date(String(event.startsAt)), event.localDate)
+    : formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', ...year, timeZone: 'UTC' }, new Date(`${event.localDate}T12:00:00Z`), event.localDate);
   const time = timed ? `, ${formatWith(locale, { hour: 'numeric', minute: '2-digit', timeZone: event.timeZone }, new Date(String(event.startsAt)), event.localTime ?? '')}`
     : event.precision === 'timed' && event.localTime ? `, ${event.localTime}` : '';
   const when = `${verb} ${day}${time}${zone}`;
-  if (timing.state === 'ended' || timing.state === 'started') return { when, relative: PAST_WORD[String(event.eventKind)] ?? 'past', tone: 'past' };
+  if (past) return { when, relative: PAST_WORD[String(event.eventKind)] ?? 'past', tone: 'past' };
   if (timing.state === 'unknown') return { when, relative: '', tone: '' };
   const tone = timing.state === 'soon' ? 'soon' : '';
   if (timing.msUntil === null) {
@@ -153,8 +160,19 @@ export function monthHeading(event, locale = 'en-US') {
  * @returns {string}
  */
 export function auctionTimeLabel(event, view) {
-  const { when, relative } = eventWhen(event, view);
-  return relative ? `${when} · ${relative}` : when;
+  const said = eventWhen(event, view);
+  const relative = relativeToShow(event, said);
+  return relative ? `${said.when} · ${relative}` : said.when;
+}
+/**
+ * The relative word a line writes after eventWhen's `when`: none where the past verb already says it ("Closed Fri 8 Oct
+ * 2021, 11:00"); a sale day, whose name has no tense, keeps "ended" (K-07).
+ * @param {Partial<AuctionEvent> | null | undefined} event
+ * @param {{ relative: string, tone: string }} said
+ * @returns {string}
+ */
+export function relativeToShow(event, said) {
+  return said.tone === 'past' && event?.eventKind !== 'auction-day' && Object.hasOwn(PAST_VERB, String(event?.eventKind)) ? '' : said.relative;
 }
 
 /**
@@ -186,6 +204,21 @@ export function auctionQueueForLots(lots, events, queue = 'all-open', now = new 
   const keyed = entries.filter(({ lot, event }) => matches({ lot, event, timing: timingOf(event) }))
     .map((entry) => { const sortMs = timingOf(entry.event).sortMs; return { entry, rank: sortMs === null ? 1 : 0, at: sortMs ?? 0 }; });
   return keyed.sort((left, right) => left.rank - right.rank || left.at - right.at || left.entry.index - right.entry.index).map(({ entry }) => entry);
+}
+
+/**
+ * The Auctions page's two lists (K-07): the sales still to come or under way, soonest first (one with no date last), and
+ * those that have passed, newest first.
+ * @param {*} events
+ * @param {string} [now]
+ * @returns {{ upcoming: AuctionEvent[], past: AuctionEvent[] }}
+ */
+export function splitAuctions(events, now = new Date().toISOString()) {
+  const timed = (events ?? []).map((event, index) => ({ event, index, timing: eventTiming(event, now) }));
+  const at = ({ timing }) => (timing.sortMs === null ? Number.POSITIVE_INFINITY : timing.sortMs);
+  const upcoming = timed.filter(({ timing }) => timing.state !== 'ended').sort((left, right) => at(left) - at(right) || left.index - right.index);
+  const past = timed.filter(({ timing }) => timing.state === 'ended').sort((left, right) => at(right) - at(left) || left.index - right.index);
+  return { upcoming: upcoming.map(({ event }) => event), past: past.map(({ event }) => event) };
 }
 
 /**

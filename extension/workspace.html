@@ -123,7 +123,7 @@
 
     <section id="route-auctions" class="route" aria-labelledby="auctions-heading" hidden>
       <div class="section-heading"><h2 id="auctions-heading">Auctions</h2><div class="form-actions heading-actions"><button id="new-event" class="secondary btn-sm" type="button" disabled data-until-loaded>Add auction</button></div></div>
-      <div class="split-layout"><div id="event-list" class="record-list"></div><form id="event-form" class="panel" data-editor="event" hidden>
+      <div class="split-layout"><div class="event-column"><label id="event-filter-label" class="event-filter" hidden><span class="sr-only">Filter auctions</span><input id="event-filter" type="search" autocomplete="off" placeholder="Auction name"></label><div id="event-list" class="record-list"></div></div><form id="event-form" class="panel" data-editor="event" hidden>
         <h3>Auction</h3><input type="hidden" name="id">
         <label>Name<input name="name" required data-limit="title"></label>
         <label>When<select name="when"><option value="auction-starts">Auction starts at</option><option value="lot-closes">Lots close at</option><option value="auction-day">Sale day (date only)</option></select></label>
