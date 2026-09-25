@@ -279,6 +279,15 @@ async function initWorkspace() {
     loadedOnce = true;
     for (const control of document.querySelectorAll('[data-until-loaded]')) control.disabled = false;
   };
+  // The Search route's two currencies start on the collector's default, however the page was reached, and follow it
+  // until the collector chooses one there or opens the route from a coin, which sets the coin's (review Minor 2).
+  const currencyChosen = { filter: false, form: false };
+  const followDefaultCurrency = () => {
+    const currency = snapshot.preferences?.currency;
+    if (!CURRENCIES.includes(currency)) return;
+    if (!currencyChosen.filter) $('evidence-currency').value = currency;
+    if (!currencyChosen.form) $('evidence-form').elements.currency.value = currency;
+  };
   // A draft that arrives after the collector has started on the form it would fill is offered in that form's own line,
   // never loaded over what they typed or opened (H-01).
   const offerDraft = (line, words, load) => {
@@ -298,6 +307,7 @@ async function initWorkspace() {
   const acceptIncoming = (incoming) => {
     snapshot = incoming;
     enableLoadedControls();
+    followDefaultCurrency();
     eventsById = new Map((snapshot.auctionEvents ?? []).map((event) => [event.id, event]));
     const selected = selectionAfterSnapshot(selection, snapshot);
     const clearedInput = removedCoinNotice(selection, selected, dirtyEditors, removedHere);
@@ -586,7 +596,9 @@ async function initWorkspace() {
       card.append(actions); list.append(card);
     }
   }
+  $('evidence-form').addEventListener('input', (event) => { if (event.target === $('evidence-form').elements.currency) currencyChosen.form = true; });
   $('evidence-filters').addEventListener('input', (event) => {
+    if (event.target === $('evidence-currency') || event.target === $('evidence-query')) currencyChosen.filter = true;
     if (event.target === $('evidence-query')) {
       selectedQueryId = event.target.value;
       const selectedObservation = (snapshot.evidence ?? []).flatMap((row) => row.observations ?? []).find((item) => item.queryId === selectedQueryId);
@@ -1024,7 +1036,7 @@ async function initWorkspace() {
       $('research-query').value = reference;
       // The sale is recorded, and the set shown, in the bid's own currency.
       const bidCurrency = $('bid-form').elements.currency.value;
-      if (CURRENCIES.includes(bidCurrency)) { $('evidence-form').elements.currency.value = bidCurrency; $('evidence-currency').value = bidCurrency; }
+      if (CURRENCIES.includes(bidCurrency)) { $('evidence-form').elements.currency.value = bidCurrency; $('evidence-currency').value = bidCurrency; currencyChosen.filter = true; currencyChosen.form = true; }
       activeQuery = saved ? { id: saved.queryId, text: reference } : { id: requestId(), text: reference };
       selectedQueryId = activeQuery.id;
       routeChangeFromNav = false; location.hash = '#search'; setRoute(); renderEvidence();

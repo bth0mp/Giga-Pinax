@@ -2044,3 +2044,24 @@ test('a collection entry form saved twice while its save is in flight sends one 
   await settle();
   assert.equal(page.commands.filter(({ type }) => type === 'collection.update').length, 1);
 });
+
+// Minor 2: the Search route's two currencies start on the collector's default, from every way in, and a choice stands.
+test('the Search filter and the add form start on the default currency from every way in, until the collector chooses', async () => {
+  const background = await createWorkspaceBackground();
+  const created = await background.send({ type: 'preferences.migrateIfAbsent', preferences: { currency: 'GBP' } });
+  const currencies = (page) => [page.$('evidence-currency').value, page.$('evidence-form').elements.currency.value];
+  const direct = await mountWorkspace({ background, hash: '#search' });
+  assert.deepEqual(currencies(direct), ['GBP', 'GBP'], 'opened on Search');
+  const viaNav = await mountWorkspace({ background, hash: '#watchlist' });
+  await viaNav.navigate('#search');
+  assert.deepEqual(currencies(viaNav), ['GBP', 'GBP'], 'reached from the nav');
+  const late = await mountBeforeSnapshot(background, { hash: '#search' });
+  await late.land();
+  assert.deepEqual(currencies(late), ['GBP', 'GBP'], 'with the snapshot late');
+  direct.$('evidence-currency').value = 'CHF';
+  await direct.$('evidence-filters').emit('input', { target: direct.$('evidence-currency') });
+  const euro = await background.send({ type: 'preferences.save', expectedRevision: created.value.revision, preferences: { ...created.value, currency: 'EUR' } });
+  assert.equal(euro.ok, true, euro.message);
+  await settle();
+  assert.deepEqual(currencies(direct), ['CHF', 'EUR'], 'the filter the collector chose stands; the untouched form follows the new default');
+});
