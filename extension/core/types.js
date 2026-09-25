@@ -34,8 +34,8 @@
 // --- Money -----------------------------------------------------------------------------------------
 
 /**
- * An amount in one currency's minor units (cents). Every stored amount is one of the four currencies
- * money.js lists; nothing is ever converted or added across currencies.
+ * An amount in one currency's minor units (cents; whole yen for JPY). Every stored amount is in one of the
+ * currencies money.js lists; nothing is ever converted or added across currencies.
  * @typedef {object} Money
  * @property {string} currency
  * @property {number} minor

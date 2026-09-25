@@ -1507,3 +1507,20 @@ test('an increment and minimum typed without a fee are saved as a grid only, and
   assert.equal(bidEstimateToSend({}, { currency: 'EUR' }).value, undefined, 'nothing typed: nothing sent');
   assert.equal(bidEstimateToSend({ costEstimate: sent.value }, { currency: 'EUR' }).value, null, 'the grid cleared: taken off');
 });
+
+// --- More currencies (G-23 / Q-15) ------------------------------------------------------------------------------
+
+test('a yen coin reads in whole yen in its form fields, the comparison and its money line', () => {
+  const jpy = (minor) => ({ currency: 'JPY', minor });
+  assert.equal(moneyInputText(jpy(1200000), 'de-DE'), '1200000');
+  const draft = outcomeDraftForLot({ outcome: { status: 'open' }, activeBid: { amount: jpy(1200000), buyerPremiumBps: 1750 } }, 'en-US');
+  assert.equal(draft.hammerPlaceholder, 'Your bid 1200000');
+  const estimate = { currency: 'JPY', shippingMinor: 3000, paymentFeeBps: 250, paymentFeeMinor: 500, incrementMinor: 1, minimumBidMinor: 0 };
+  const [row] = comparisonRows([{ id: 'a', title: 'A', plannedBid: { amount: jpy(1200000), buyerPremiumBps: 1750 }, costEstimate: estimate }], ['a']);
+  assert.deepEqual([row.amountLabel, row.estimateLabel, row.totalLabel],
+    ['Planned maximum JPY 1200000', 'JPY fees: shipping 3000 + fixed 500 + 2.50%', 'Estimated total JPY 1448825']);
+  const won = { outcome: { status: 'won', hammer: jpy(1200000), cost: { buyerPremiumBps: 1750, premium: jpy(210000), shipping: jpy(3000), total: jpy(1413000) } } };
+  const line = wonCostLine(won, 'en-US');
+  assert.deepEqual(line.cells.map((cell) => cell.figure), ['1,200,000', '210,000', '3,000', '1,413,000']);
+  assert.equal(wonCostLine(won, 'de-DE').cells[3].figure, '1.413.000');
+});

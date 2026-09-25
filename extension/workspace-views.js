@@ -2,7 +2,7 @@
 // What the workspace (workspace.js) shows, worked out from the records: its routes and detail tabs,
 // the coin list, the auction queues, the comparison table, the exposure by currency and the saved
 // comparables for a query.
-import { calculateBidCost } from './core/money.js';
+import { calculateBidCost, formatAmount, plainAmount } from './core/money.js';
 import { costFees, eventTiming, feeSheetOf, lotCost, projectExposure, shownCostTotal } from './core/projections.js';
 import { sameZone, zonePlace } from './core/reminders.js';
 import { moneyInputText } from './workspace-forms.js';
@@ -200,7 +200,7 @@ export function comparisonRows(lots, selectedIds) {
     const estimate = feeSheetOf(lot.costEstimate);
     const estimateLabel = terminal ? '' : !estimate ? 'No saved fee estimate' : !amount || estimate.currency !== amount.currency
       ? `Fee estimate unavailable for ${amount?.currency ?? 'this amount'}; recalculate`
-      : [`${estimate.currency} fees: shipping ${((estimate.shippingMinor ?? 0) / 100).toFixed(2)} + fixed ${((estimate.paymentFeeMinor ?? 0) / 100).toFixed(2)} + ${((estimate.paymentFeeBps ?? 0) / 100).toFixed(2)}%`,
+      : [`${estimate.currency} fees: shipping ${plainAmount({ currency: estimate.currency, minor: estimate.shippingMinor ?? 0 })} + fixed ${plainAmount({ currency: estimate.currency, minor: estimate.paymentFeeMinor ?? 0 })} + ${((estimate.paymentFeeBps ?? 0) / 100).toFixed(2)}%`,
         estimate.premiumVatBps ? `VAT ${(estimate.premiumVatBps / 100).toFixed(2)}% on the premium` : '',
         estimate.platformFeeBps ? `platform fee ${(estimate.platformFeeBps / 100).toFixed(2)}% on the hammer` : '',
         estimate.importVatBps ? `import VAT ${(estimate.importVatBps / 100).toFixed(2)}% on hammer, premium and shipping` : ''].filter(Boolean).join(' · ');
@@ -214,16 +214,9 @@ export function comparisonRows(lots, selectedIds) {
   });
 }
 
-// A figure in the money line: the collector's own grouping and decimal mark, two places, no symbol - the line
-// names its currency once.
-function lineFigure(money, locale) {
-  const whole = BigInt(money.minor) / 100n;
-  const fraction = String(money.minor % 100).padStart(2, '0');
-  let format;
-  try { format = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-  catch { format = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-  return format.formatToParts(whole).map((part) => (part.type === 'fraction' ? fraction : part.value)).join('');
-}
+// A figure in the money line: the collector's own grouping and decimal mark, the currency's own places, no symbol -
+// the line names its currency once.
+const lineFigure = (money, locale) => formatAmount(money, locale);
 // The gaps that leave a won coin with no total, in words; fees never recorded are not one of them (G-05).
 const COST_GAP_WORDS = Object.freeze({
   hammer: 'no hammer recorded',

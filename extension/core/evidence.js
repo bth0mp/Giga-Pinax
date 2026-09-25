@@ -1,5 +1,5 @@
 // @ts-check
-import { CURRENCIES, validateMoney } from './money.js';
+import { CURRENCIES, UNSUPPORTED_CURRENCY_MESSAGE, validateMoney } from './money.js';
 import { UUID, failure, isIsoDate, isIsoInstant, stableUuid, stripTracking } from './validate.js';
 /**
  * @typedef {import('./types.js').Money} Money
@@ -408,7 +408,7 @@ function emptyStatistics(filters, validationError = null) {
 
 function validateFilters(filters) {
   if (!filters || typeof filters !== 'object') return { code: 'invalid-filters', message: 'Statistics filters are required.', path: 'filters' };
-  if (!CURRENCIES.includes(filters.currency)) return { code: 'invalid-currency', message: 'Currency must be USD, EUR, GBP, or CHF.', path: 'filters.currency' };
+  if (!CURRENCIES.includes(filters.currency)) return { code: 'invalid-currency', message: UNSUPPORTED_CURRENCY_MESSAGE, path: 'filters.currency' };
   if (!isIsoDate(filters.fromDate)) return { code: 'invalid-date', message: 'Start date must use YYYY-MM-DD.', path: 'filters.fromDate' };
   if (!isIsoDate(filters.toDate)) return { code: 'invalid-date', message: 'End date must use YYYY-MM-DD.', path: 'filters.toDate' };
   if (filters.fromDate > filters.toDate) return { code: 'invalid-date-range', message: 'Start date must not follow end date.', path: 'filters.dateRange' };

@@ -68,6 +68,11 @@ async function initWorkspace() {
     if (className) node.className = className;
     return node;
   };
+  // Every currency select lists the currencies an amount may be recorded in, in money.js's order (G-23).
+  for (const select of [$('evidence-currency'), $('evidence-form').elements.currency, $('bid-form').elements.currency,
+    $('outcome-form').elements.hammerCurrency, $('outcome-form').elements.invoiceCurrency]) {
+    select.replaceChildren(...CURRENCIES.map((code) => { const option = text('option', code); option.value = code; return option; }));
+  }
   const view = () => ({ locale: navigator.language });
   // An auction's name, its day and time, and how soon, the relative part toned: amber within 48 hours, muted once past.
   const eventLine = (event, className, tag = 'span', withName = true) => {

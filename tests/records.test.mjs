@@ -1479,3 +1479,20 @@ test('a grid-only sheet beside an active bid counts no fees in the all-in exposu
   assert.equal(exposure.EUR.totalCount, 0);
   assert.equal(exposure.EUR.knownTotalMinor, 0);
 });
+
+// --- More currencies (G-23 / Q-15) ------------------------------------------------------------------------------
+
+import { CURRENCIES, UNSUPPORTED_CURRENCY_MESSAGE } from '../extension/core/money.js';
+
+test('a record may be in any currency money.js lists, and another is refused with the list', () => {
+  const lots = CURRENCIES.map((currency, index) => makeLot(`00000000-0000-4000-8000-${String(900 + index).padStart(12, '0')}`, {
+    plannedBid: { amount: { currency, minor: 1200000 }, buyerPremiumBps: 1750 },
+    costEstimate: { currency, shippingMinor: 3000, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1000, minimumBidMinor: 0 },
+  }));
+  const snapshot = snapshotWith(...lots);
+  snapshot.preferences = { schemaVersion: SCHEMA_VERSION, revision: 0, currency: 'JPY', desktopAlertsEnabled: false, createdAt: NOW, updatedAt: NOW,
+    housePremiumPresets: [{ name: 'Taisei', buyerPremiumBps: 1500, incrementLadder: { currency: 'JPY', tiers: [{ from: 0, step: 1000 }] } }] };
+  assert.deepEqual(validateSnapshot(snapshot), { ok: true, value: snapshot });
+  const refused = snapshotWith(makeLot(IDS.lotUsdKnown, { costEstimate: { currency: 'XAU', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } }));
+  assert.equal(validateSnapshot(refused).error.message, UNSUPPORTED_CURRENCY_MESSAGE);
+});

@@ -3,7 +3,7 @@
 // read into form fields and back, a page's draft read into the coin editor and the auction it offers,
 // and an auction's reminders read into their two controls and back.
 import { FEE_SHEET_FIELDS, buildBidCalculation, feeSheetEstimate, feeSheetTexts, housePresetFor } from './bid-tools.js';
-import { calculateBidCost, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
+import { calculateBidCost, formatMoney, parseMoney, parsePremiumPercent, plainAmount } from './core/money.js';
 import { bidPremiumRate, feeSheetOf } from './core/projections.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
@@ -392,7 +392,8 @@ export function mergeLotSourceLinks(existing, editedManualUrl, originalManualUrl
 }
 
 // Written into a field the collector saves again, so in the one form the money parser reads in every
-// locale: ASCII digits and a point. The locale is accepted for call-site symmetry only.
+// locale: ASCII digits and a point, in the currency's own places (whole yen). The locale is accepted for
+// call-site symmetry only.
 /**
  * @param {Money | null | undefined} money
  * @param {string} [locale] accepted for call-site symmetry only
@@ -400,8 +401,7 @@ export function mergeLotSourceLinks(existing, editedManualUrl, originalManualUrl
  */
 export function moneyInputText(money, locale = 'en-US') {
   if (!money) return '';
-  const absolute = BigInt(Math.abs(money.minor));
-  return `${money.minor < 0 ? '-' : ''}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`;
+  return `${money.minor < 0 ? '-' : ''}${plainAmount({ currency: money.currency, minor: Math.abs(money.minor) })}`;
 }
 
 // The outcome form opens on the action the collector is about to take: an open lot on Won, in the currency of the bid
