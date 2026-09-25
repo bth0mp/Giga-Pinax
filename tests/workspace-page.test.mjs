@@ -1283,3 +1283,31 @@ test('Active bids shows the all-in figure of the bids with a fee sheet, and how 
   // 1,300 + 260 + 21.06 VAT on the premium + 15 shipping; the Nomos bid has no fee sheet.
   assert.ok(card.textContent.includes('All-in if every bid wins CHF\u00a01,596.06 (1 of 2 with fees)'), card.textContent);
 });
+
+// G-04: the median the popup drew this session is offered on the Bid tab of the coin with the same reference, in the
+// bid's own currency, with Use as maximum; for any other coin or currency, or a record out of shape, nothing shows.
+test('the popup’s session median is offered as the maximum only for the same reference and currency', async () => {
+  const background = await createWorkspaceBackground();
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero, as', reference: 'RIC I² Nero 306', sourceLinks: [] } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero, dupondius', reference: 'RIC I² Nero 306a', sourceLinks: [] } });
+  const at = new Date(Date.now() - 3 * 60000).toISOString();
+  await background.session.set({ 'giga-pinax-session-median': { reference: 'RIC I² Nero 306', provider: 'acsearch', currency: 'USD', median: { currency: 'USD', minor: 24000 }, count: 2, at } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, as');
+  const session = () => page.$('bid-evidence').querySelector('.bid-evidence-session');
+  assert.equal(session()?.textContent, 'acsearch median $240.00 from 2 sales · seen 3 min ago, session onlyUse as maximum');
+  await page.click('use-session-median');
+  assert.equal(page.$('bid-form').elements.amount.value, '240.00');
+  assert.equal(page.blocksUnload(), true, 'the figure is typed into the form, not saved');
+  assert.equal(Object.hasOwn(background.root().lots[0], 'plannedBid'), false);
+  await page.type('bid-form', 'currency', 'EUR');
+  assert.equal(session(), null, 'another currency: nothing, never converted');
+  page.prompts.length = 0;
+  await page.openCoin('Nero, dupondius');
+  assert.equal(session(), null, 'another reference: nothing');
+  // A record out of shape is no median at all.
+  await page.openCoin('Nero, as');
+  await background.session.set({ 'giga-pinax-session-median': { reference: 'RIC I² Nero 306', provider: 'somewhere', currency: 'USD', median: 24000, count: 2, at } });
+  await settle();
+  assert.equal(session(), null);
+});

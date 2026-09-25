@@ -311,7 +311,7 @@ test('preset save has a synchronous pending guard and disables its control', () 
 
 // The calculator mounted the way a page mounts it, in a sandbox whose extension calls are answered
 // by the test: bid-tools.js with its imports handed in as globals, as the settings tests load theirs.
-async function mountCalculator({ snapshot }) {
+async function mountCalculator({ snapshot, session = null }) {
   const document = new FakeDocument();
   const container = document.createElement('div');
   const commands = [];
@@ -321,6 +321,7 @@ async function mountCalculator({ snapshot }) {
     sendCommand: async (command) => { commands.push(structuredClone(command)); return { ok: true, value: command.preferences }; },
     newRequestId: () => `request-${commands.length + 1}`,
     subscribeToSnapshots: () => () => {},
+    ...(session ? { browser: { storage: { session: { get: async (key) => ({ [key]: session[key] }), onChanged: { addListener() {}, removeListener() {} } } } } } : {}),
     ...browserGlobals(document),
     Object, Array, String, Number, Boolean, Math, Promise, Set, Map, RegExp, Intl, Error, TypeError, JSON, Date, structuredClone,
   };
@@ -576,4 +577,36 @@ test('the calculator reloads only under another key, and a caller without one ke
   assert.ok(calculatorInputsForLot(values, { loadedKey: 'lot-a|EUR|14000|2000' }), 'the same coin with new terms loads again');
   assert.equal(calculatorInputsForLot({ lotId: 'lot-a', currency: 'EUR' }, { loadedKey: 'lot-a' }), null);
   assert.ok(calculatorInputsForLot({ currency: 'GBP' }, { loadedKey: 'lot-a' }), 'no key: always loads');
+});
+
+// G-04: the popup's session median, read defensively: its own shape, a provider this tool searches, the median in its
+// own currency, a real count and a time not in the future.
+test('a session median is read only in its exact shape', async () => {
+  const { readSessionMedian, sessionMedianAge } = await import('../extension/bid-tools.js');
+  const now = Date.parse('2026-09-25T12:00:00.000Z');
+  const good = { reference: ' RIC I² Nero 306 ', provider: 'acsearch', currency: 'USD', median: { currency: 'USD', minor: 24000 }, count: 2, at: '2026-09-25T11:57:00.000Z' };
+  assert.deepEqual(readSessionMedian(good, now), { reference: 'RIC I² Nero 306', provider: 'acsearch', providerLabel: 'acsearch', currency: 'USD', median: { currency: 'USD', minor: 24000 }, count: 2, at: good.at });
+  assert.deepEqual(readSessionMedian({ ...good, median: 24000, provider: 'coinarchives' }, now).median, { currency: 'USD', minor: 24000 });
+  for (const bad of [null, 'x', [], { ...good, provider: 'ebay' }, { ...good, currency: 'JPY' }, { ...good, median: { currency: 'EUR', minor: 24000 } },
+    { ...good, median: 0 }, { ...good, median: 1.5 }, { ...good, count: 0 }, { ...good, count: '2' }, { ...good, at: 'yesterday' },
+    { ...good, at: '2026-09-25T13:00:00.000Z' }, { ...good, reference: '' }, { ...good, reference: 7 }]) {
+    assert.equal(readSessionMedian(bad, now), null, JSON.stringify(bad));
+  }
+  assert.equal(sessionMedianAge('2026-09-25T11:57:00.000Z', now), 'seen 3 min ago');
+  assert.equal(sessionMedianAge('2026-09-25T09:57:00.000Z', now), 'seen 2 h ago');
+});
+
+test('the calculator offers the session median above the fields and puts it in the hammer in its own currency', async () => {
+  const session = { 'giga-pinax-session-median': { reference: 'RIC I² Nero 306', provider: 'acsearch', currency: 'GBP', median: { currency: 'GBP', minor: 24000 }, count: 2, at: new Date().toISOString() } };
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } }, session });
+  const line = calculator.container.querySelector('.bid-calculator-median');
+  assert.equal(line.hidden, false);
+  assert.equal(line.children[0].textContent, 'acsearch median £240.00 (2 sales) for RIC I² Nero 306 ·');
+  assert.equal(calculator.field('Currency').value, 'GBP', 'an empty calculator follows the lookup’s currency');
+  calculator.field('Currency').value = 'USD'; await calculator.field('Currency').emit('input');
+  await line.children[1].click();
+  assert.equal(calculator.field('Currency').value, 'GBP');
+  assert.equal(calculator.field('Hammer price').value, '240.00');
+  const mode = calculator.field('Calculation'); mode.value = 'budget'; await mode.emit('change');
+  assert.equal(line.hidden, true, 'a median is a hammer, not a budget');
 });

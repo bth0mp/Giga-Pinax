@@ -3,7 +3,7 @@ import { LIMITS } from './core/fields.js';
 import { CURRENCIES, formatMoney, parseMoney, parsePremiumPercent } from './core/money.js';
 import { lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
-import { FEE_SHEET_FIELDS, formatMinorInput } from './bid-tools.js';
+import { FEE_SHEET_FIELDS, followSessionMedian, formatMinorInput, sessionMedianAge } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
 import { openSettings } from './navigation.js';
 import {
@@ -866,6 +866,22 @@ async function initWorkspace() {
         : `Your saved comparables for ${reference}: ${own.count} in ${currency}, too few for a median${years(own)}`, 'bid-evidence-figure'));
     const others = found.filter((item) => item.currency !== currency);
     if (others.length) strip.append(text('p', `${own ? 'Also' : 'Saved'} ${others.map((item) => `${item.count} in ${item.currency}`).join(', ')}, not converted.`, 'bid-evidence-other'));
+    // The median the popup drew this session, only for this very coin - the same reference, spacing and case set aside -
+    // and in the bid's own currency; it is offered, never stored (G-04).
+    const session = sessionMedian;
+    if (session && normalReference(session.reference) === normalReference(reference) && session.currency === currency) {
+      const line = text('p', `${session.providerLabel} median ${formatMoney(session.median)} from ${session.count} ${session.count === 1 ? 'sale' : 'sales'} · ${sessionMedianAge(session.at)}, session only`, 'bid-evidence-session');
+      if (!$('bid-fields').disabled) {
+        const use = text('button', 'Use as maximum', 'quiet'); use.type = 'button'; use.id = 'use-session-median';
+        use.addEventListener('click', () => {
+          const f = $('bid-form').elements; f.amount.value = moneyInputText(session.median, navigator.language);
+          $('bid-form').dispatchEvent(new Event('input', { bubbles: true }));
+          f.amount.focus();
+        });
+        line.append(use);
+      }
+      strip.append(line);
+    }
     const add = text('button', 'Add comparable', 'quiet'); add.type = 'button'; add.id = 'bid-add-comparable';
     add.addEventListener('click', () => {
       // The set already saved under this reference is the one the Search route opens on, so the new sale joins it.
@@ -1350,6 +1366,9 @@ async function initWorkspace() {
       populateEditor(editor);
     }
   }
+  // The popup's session median, followed while this page is open; nothing of it is written anywhere.
+  let sessionMedian = null;
+  followSessionMedian((found) => { sessionMedian = found; renderBidEvidence(); }, (globalThis.browser ?? globalThis.chrome)?.storage);
   function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderOpenRecordForms(); updateDirtyMarks(); }
   // The popup opens a queue by name ("#watchlist?queue=needs-outcome"); a name the Queue select does not list is ignored.
   const namedQueue = /[?&]queue=([\w-]+)/.exec(location.hash)?.[1];

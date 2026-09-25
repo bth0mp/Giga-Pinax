@@ -648,10 +648,13 @@ export function memoryStorageArea() {
 export async function createWorkspaceBackground({ now = '2026-09-12T12:00:00.000Z', newId = testUuid } = {}) {
   const { COMMAND_TYPES, createCommandWriter, STORAGE_KEY } = await import('../../extension/store.js');
   const storage = memoryStorageArea();
+  // The browser's session area, which the popup writes its last median into (G-04) and the workspace reads.
+  const session = memoryStorageArea();
   const writer = createCommandWriter(storage, { now: () => now, newId });
   const holds = [];
   return {
     storage,
+    session,
     writer,
     holds,
     commandTypes: COMMAND_TYPES,
@@ -691,7 +694,7 @@ function fakeExtensionRuntime(background, commands) {
         return structuredClone(reply);
       },
     },
-    storage: { local: background.storage, onChanged: background.storage.onChanged },
+    storage: { local: background.storage, session: background.session, onChanged: background.storage.onChanged },
     permissions: { request: async () => false },
   };
 }
