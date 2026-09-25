@@ -294,6 +294,11 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .secondary-button[disabled] {cursor:progress;}
 /* "Check online" sits under the lookup error it answers. */
 .online-fallback {margin-top:6px;}
+/* K-02: free words answered with a search the collector starts, the examples and the spellings the box reads. */
+.free-text {margin-top:6px;}
+.free-text .phrase-search {max-width:100%; min-height:var(--control-h-sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.free-text .example-row {margin-top:8px;}
+.free-text > .field-hint {margin:6px 0 0;}
 .coinarchives-median-line {display:flex; align-items:baseline; gap:5px; margin:2px 0;}
 /* Each provider's median is the one figure of its panel, drawn alike. */
 .coinarchives-median-line strong {font-family:var(--font-serif); font-size:var(--text-figure); line-height:1.1; letter-spacing:-.01em; font-weight:500; color:var(--ink); font-variant-numeric:lining-nums tabular-nums;}

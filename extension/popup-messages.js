@@ -25,6 +25,12 @@ const OTHER_SUMMARY = 'No open type data for this reference. Prices from acsearc
 const CHECK_MESSAGE = 'Enter an amount such as 500.';
 const NO_REFERENCES_MESSAGE = 'No catalogue references found in that text.';
 const EMPTY_QUICK_MESSAGE = 'Type a reference in the Reference box, such as “RIC 972”.';
+// K-02: what the box says to text that names no catalogue. Words are offered as an acsearch search the collector starts himself; a ruler the people
+// table knows opens Refine reference with him filled in; a web address is refused, since a lot page is captured, never searched as text.
+const NO_CATALOGUE_MESSAGE = 'No catalogue reference in that text.';
+const rulerMessage = (ruler) => `${ruler} is a RIC ruler. Add the type’s number under Refine reference, or search acsearch for the words.`;
+const WEB_ADDRESS_MESSAGE = 'That’s a web address. Open the page in a tab, then use “Capture the lot page you’re on” below.';
+const SPELLINGS_HINT = 'The box also reads “RIC 972”, “Titus 123”, “SC 1266.2” and “Bop Euthydemus I 24A”, or use Refine reference.';
 const PRICES_WAIT_MESSAGE = 'This reference names more than one type, so no prices are shown. Choose one type to see its prices.';
 // Names the bundle that was really searched: every bundled corpus takes this path now, and a collector told his Price
 // number is not in OCRE would be told about a catalogue nobody looked in.
@@ -67,6 +73,6 @@ function coinArchivesFailure(outcome, currency) {
 export {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
-  NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE,
-  catalogueFailureMessage, coinArchivesFailure, onlineMessage,
+  NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
+  WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, onlineMessage, rulerMessage,
 };

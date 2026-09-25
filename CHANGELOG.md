@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Changed
+
+- The popup answers what a newcomer types instead of refusing it with a list of spellings. Words that name no catalogue (`Athens tetradrachm`) say "No catalogue reference in that text." with a **Search acsearch for “Athens tetradrachm”** button, the example chips and the spellings the box reads; nothing is fetched until you choose the search, which shows acsearch's prices with no card. A ruler the people table knows (`Nero`, `nero denarius`, `Trajan`) also opens **Refine reference** on RIC with the ruler filled in and the cursor where the number goes. A pasted web address is no longer searched on acsearch as a phrase: the popup says to open the page and use **Capture the lot page you’re on**. Text that sets out to be a reference (`RIC XI Nero 1`, `Crawfrd 44/5`) keeps its spellings.
+
 ### Fixed
 
 - Two spellings a keyboard types are read. `RIC I2 Nero 306`, `RIC I^2 Nero 306` and `RIC I2nd Nero 306` are RIC I² (no keyboard has a ² key; a glued `2` is read after volume I only, and a caret after any volume, so `RIC V2` stays unread). A ruler or mint written after the number reads exactly as it does before it: `RIC 306 Nero`, `Ric 306, nero` and `RIC II 253 Trajan` answer what `RIC Nero 306` and `RIC II Trajan 253` answer, and a pasted lot that names its ruler only after the number (`Denarius. RIC 306 Nero. 3.21 g.`) reads it as a heading's ruler. Only a name the people or mint tables know, and nothing but that name, is read so: `RIC 306 Nero as Caesar` and `RIC 306 hello` stay unread.

@@ -2960,3 +2960,87 @@ test('the popup says “Open the workspace” and no word the glossary retired',
   assert.doesNotMatch(html, /auction workspace|buyer premium|evidence/i);
   assert.doesNotMatch(html, /Hammer price/);
 });
+
+// Loop 6 (K-02): what a newcomer types is answered, never refused with a wall of spellings. Free words are offered as an acsearch search he starts
+// himself, a ruler the people table knows opens Refine on RIC with him filled in, and a pasted web address is told to be captured. Nothing is
+// fetched until the search is chosen, and text that sets out to be a reference keeps the spellings it misspelt.
+test('free words are offered as a search, a ruler opens Refine, and a web address is refused with a sentence', async () => {
+  const lookedUp = [];
+  const searched = [];
+  const asked = [];
+  const popup = await loadPopup({ permissionRequest: async (request) => { asked.push(request); return true; },
+    priceFetch: async (request) => { searched.push(request); return oneSale; },
+    lookupTypeImpl: async (reference) => { lookedUp.push(reference); return { status: 'none', corpus: 'ocre', query: '' }; } });
+  const send = async (text) => {
+    popup.element('quick-reference').value = text;
+    await popup.element('quick-reference').emit('input');
+    popup.element('quick-reference').value = text;
+    await popup.element('reference-form').emit('submit');
+    await settle();
+  };
+
+  await send('nero denarius');
+  assert.equal(popup.element('form-error').textContent, 'Nero is a RIC ruler. Add the type’s number under Refine reference, or search acsearch for the words.');
+  assert.equal(popup.element('free-text').hidden, false);
+  assert.equal(popup.element('phrase-search').textContent, 'Search acsearch for “nero denarius”');
+  assert.equal(popup.element('refine-reference').open, true);
+  assert.equal(popup.element('catalogue').value, 'RIC');
+  assert.equal(popup.element('ric-section').value, 'Nero');
+  assert.equal(popup.element('ric-volume').value, 'I (2nd edition)');
+  assert.equal(popup.element('reference-number').value, '');
+  assert.equal(popup.element('free-text-examples').children.length, 3);
+  assert.match(popup.element('free-text-hint').textContent, /RIC 972/);
+  assert.deepEqual([lookedUp.length, searched.length, asked.length], [0, 0, 0], 'nothing is fetched or asked for until the search is chosen');
+
+  await popup.element('phrase-search').onclick();
+  await settle();
+  assert.equal(JSON.stringify(asked.map(({ origins }) => origins)), '[["https://www.acsearch.info/*"]]');
+  assert.equal(searched.length, 1);
+  assert.equal(searched[0].term, 'nero denarius');
+  assert.equal(popup.element('result').hidden, true, 'a phrase search has no card, so nothing can be saved from it');
+  assert.equal(popup.element('research-prices').hidden, false);
+  assert.equal(popup.element('prices-panel').hidden, false);
+  assert.equal(popup.element('form-error').hidden, true);
+  assert.equal(popup.element('free-text').hidden, true);
+  assert.equal(lookedUp.length, 0);
+
+  await send('Athens tetradrachm');
+  assert.equal(popup.element('form-error').textContent, 'No catalogue reference in that text.');
+  assert.equal(popup.element('phrase-search').textContent, 'Search acsearch for “Athens tetradrachm”');
+  assert.equal(popup.element('quick-reference')['aria-invalid'], 'true');
+
+  const before = searched.length;
+  await send('https://www.cngcoins.com/Lot.aspx?LOT_ID=123456');
+  assert.equal(popup.element('form-error').textContent, 'That’s a web address. Open the page in a tab, then use “Capture the lot page you’re on” below.');
+  assert.equal(popup.element('free-text').hidden, true);
+  assert.equal(popup.element('companion-current-lot').open, true);
+  assert.equal(searched.length, before, 'a web address is never searched');
+  assert.equal(lookedUp.length, 0);
+
+  // Text that begins like a catalogue is a misspelt reference, and text with no letter names nothing: both keep the spellings.
+  for (const text of ['RIC XI Nero 1', 'Crawfrd 44/5', '1234', 'Price']) {
+    await send(text);
+    assert.match(popup.element('form-error').textContent, /^Couldn’t read that reference/, text);
+    assert.equal(popup.element('free-text').hidden, true, text);
+  }
+  assert.equal(searched.length, before);
+});
+
+test('a ruler typed alone leaves Refine ready: his number and Search look up his coin', async () => {
+  const lookedUp = [];
+  const card = { id: 'ric.1(2).ner.306', corpus: 'ocre', label: 'RIC I (second edition) Nero 306', obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async (reference) => { lookedUp.push(reference); return { status: 'ok', card }; } });
+  popup.element('quick-reference').value = 'Nero';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.match(popup.element('form-error').textContent, /^Nero is a RIC ruler/);
+  assert.ok(popup.element('reference-number').focused, 'the cursor waits where the number goes');
+  popup.element('reference-number').value = '306';
+  await popup.element('reference-form').emit('input', { target: popup.element('reference-number') });
+  await popup.element('reference-form').emit('submit', { submitter: popup.element('refine-lookup-button') });
+  await settle();
+  assert.equal(lookedUp.length, 1);
+  assert.equal(JSON.stringify([lookedUp[0].catalogue, lookedUp[0].volume, lookedUp[0].section, lookedUp[0].number]), '["RIC","I (2nd edition)","Nero","306"]');
+  assert.equal(popup.element('result').hidden, false);
+});

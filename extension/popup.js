@@ -1,4 +1,4 @@
-import { HOST_ORIGINS, INVISIBLE, buildQuery, fetchSpecimens, filingNote, lookupById, lookupType, parseReference, rpcUrl } from './lookup.js';
+import { HOST_ORIGINS, INVISIBLE, buildQuery, fetchSpecimens, filingNote, lookupById, lookupType, namesCatalogue, parseReference, rpcUrl } from './lookup.js';
 import { ACSEARCH_ORIGIN, PERIODS, buildSearchUrl, chooseTerm, citesReference, coinArchivesSection, coinArchivesTerm, coinArchivesUrl, createPriceCuration, defaultTerm, fetchPrices, filterableDenomination, filtersCitations, futureText, gradeMedians, gradeText, isoDay, lastSale, localDay, lotsInPeriod, mediansByYear, namesDenomination, parsePrice, priceCheck, pricePanelVisibility, quotedTerm, quoteList, referenceName, saleDate, searchCategory, searchesReference, stableResultId, summarise, summaryText, trendOf, trendText, ungradedText, upcomingLots, upcomingText } from './prices.js';
 import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, rememberRecent, rememberedTerm, rememberTerm, restorePreferences } from './preferences.js';
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
@@ -13,8 +13,8 @@ import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAcc
 import {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
-  NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE,
-  catalogueFailureMessage, coinArchivesFailure, onlineMessage,
+  NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
+  WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, onlineMessage, rulerMessage,
 } from './popup-messages.js';
 import { candidateGroups, coinArchivesCounts, filterLines, folded, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters } from './popup-drawing.js';
 import { $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, placeAtTop, revealAgain, ricChanged, shownTheme, syncThemeButton } from './popup-shell.js';
@@ -291,6 +291,7 @@ function clearOutput() {
   $('online-fallback').hidden = true;
   $('online-fallback').disabled = false;
   $('online-fallback').onclick = null;
+  $('free-text').hidden = true;
   $('prices-restored').hidden = true;
   // What a Watch said under the Upcoming list belongs to the list it was pressed in, which this clears.
   $('upcoming-saved').hidden = true;
@@ -710,8 +711,9 @@ function renderFirstRun() {
   $('first-run').hidden = answered || preferences.recent.length > 0 || Boolean($('quick-reference').value.trim());
 }
 
-// An example chip looks up as if typed and sent: the box shows it, and the lookup runs through Look up's own handler.
-$('example-list').replaceChildren(...EXAMPLE_REFERENCES.map((example) => {
+// An example chip looks up as if typed and sent: the box shows it, and the lookup runs through Look up's own handler. The same chips stand under an
+// answer to free words (K-02).
+const exampleChips = () => EXAMPLE_REFERENCES.map((example) => {
   const item = document.createElement('li');
   const button = document.createElement('button');
   button.type = 'button';
@@ -724,7 +726,67 @@ $('example-list').replaceChildren(...EXAMPLE_REFERENCES.map((example) => {
   });
   item.append(button);
   return item;
-}));
+});
+$('example-list').replaceChildren(...exampleChips());
+$('free-text-examples').replaceChildren(...exampleChips());
+
+// K-02: a whole box that is a web address. A lot page is captured, never searched as a phrase.
+const isWebAddress = (text) => /^\s*(?:https?:\/\/|www\.)\S+\s*$/i.test(String(text ?? ''));
+// Text that names no catalogue, answered rather than refused: its words are offered as an acsearch search the collector starts himself, and a ruler
+// the people table knows opens Refine reference on RIC with him filled in. Text that begins like a catalogue is a misspelt reference, and text with
+// no letter names nothing: both keep the spellings (null).
+function freeText(text) {
+  const words = String(text ?? '').replace(INVISIBLE, '').trim().replace(/\s+/g, ' ');
+  if (!/\p{L}/u.test(words) || namesCatalogue(words)) return null;
+  const { rulers } = findReferences(words);
+  return { words, ruler: rulers.length === 1 ? rulers[0] : '' };
+}
+function showFreeText({ words, ruler }) {
+  clearOutput();
+  answered = true;
+  renderFirstRun();
+  const label = Array.from(words).length > 60 ? `${Array.from(words).slice(0, 59).join('')}…` : words;
+  $('phrase-search').textContent = `Search acsearch for “${label}”`;
+  $('phrase-search').setAttribute('aria-label', `Search acsearch for “${words}”`);
+  $('phrase-search').onclick = () => searchPhrase(words);
+  $('free-text-hint').textContent = SPELLINGS_HINT;
+  if (ruler) {
+    // Refine on RIC with the ruler in its field and the volume he implies; the number is the collector's to type, and Search answers for it.
+    $('catalogue').value = 'RIC';
+    fillRicFields(volumeFor(ruler, ''), ruler);
+    $('reference-number').value = '';
+    updateFields();
+    guidedTouched = true;
+    $('refine-reference').open = true;
+  }
+  showError(ruler ? rulerMessage(ruler) : NO_CATALOGUE_MESSAGE, ruler ? '' : 'quick-reference');
+  $('free-text').hidden = false;
+  if (ruler) $('reference-number').focus({ preventScroll: true });
+  revealAgain('form-error');
+}
+// The words as one acsearch search, started by the collector's own click: no card, no type, nothing saved, and the prices panel says what it found.
+// Access is asked for before anything waits, so the click still counts as the collector's.
+function searchPhrase(words) {
+  const access = requestHostAccess([ACSEARCH_ORIGIN]);
+  forgetAnswer();
+  clearOutput();
+  answered = true;
+  renderFirstRun();
+  const reference = Object.freeze({ catalogue: 'Other', number: words, volume: '', section: '' });
+  researchContext = Object.freeze({ reference, label: words, identity: null, term: words, currency: $('currency').value, priceTicket: priceRequestId, phrase: true });
+  const context = researchContext;
+  $('price-term').value = words;
+  $('price-search').open = false;
+  updateAcsearchLink();
+  updateCoinArchivesLink();
+  $('research-prices').hidden = false;
+  announce(`Searching acsearch for ${words}.`);
+  void Promise.resolve(access).then((allowed) => {
+    if (context !== researchContext) return;
+    if (!allowed) { showPricesError(ACSEARCH_PERMISSION_MESSAGE); return; }
+    runPrices(words, context.currency, { remember: false, context });
+  });
+}
 
 // The filters an acsearch page is drawn with, for the median and the Upcoming list alike.
 // Only a verified card carries a denomination to offer, and only one a whole-word match can tell from an ordinary word.
@@ -1624,6 +1686,16 @@ $('reference-form').addEventListener('submit', async (event) => {
   if (refinedSubmit) {
     $('quick-reference').value = '';
   } else {
+    // K-02: a pasted web address is answered with a sentence, before lot text could read a catalogue key out of it; nothing is searched.
+    if (isWebAddress($('quick-reference').value)) {
+      clearOutput();
+      clearLot();
+      answered = true;
+      renderFirstRun();
+      showError(WEB_ADDRESS_MESSAGE, 'quick-reference');
+      $('companion-current-lot').open = true;
+      return;
+    }
     // A recalled label sent unchanged reopens as its chip does, first: an Other label naming two catalogues, or an SC "Ad." title, would read as lot text.
     const entry = preferences.recent[recalled];
     if (entry && entry.label === $('quick-reference').value) { openRecent(entry); return; }
@@ -1636,7 +1708,13 @@ $('reference-form').addEventListener('submit', async (event) => {
   clearLot();
   // Parsing and validation stay synchronous so the permission request below is still the first await and keeps the user gesture.
   // The form is novalidate so an unparsed one-box shows QUICK_ERROR instead of the browser's required-field bubble.
-  if (!refinedSubmit && !applyQuickReference()) { clearOutput(); showError(QUICK_ERROR, 'quick-reference'); return; }
+  if (!refinedSubmit && !applyQuickReference()) {
+    const free = freeText($('quick-reference').value);
+    if (free) { showFreeText(free); return; }
+    clearOutput();
+    showError(QUICK_ERROR, 'quick-reference');
+    return;
+  }
   if (!$('reference-form').reportValidity()) {
     $('form-error').hidden = true;
     $('form-error').textContent = '';

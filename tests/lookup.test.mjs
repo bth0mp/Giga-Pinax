@@ -1775,3 +1775,10 @@ test('parseReference reads I2, I^2 and I2nd as I², and a ruler or mint after th
   assert.equal(parseReference('RIC 306 Nero as Caesar'), null);
   assert.equal(parseReference('RIC II Hadrian 253 Trajan'), null);
 });
+
+// Loop 6 (K-02): text that sets out to be a catalogue reference is a misspelt one; free words a collector types to find a coin are not.
+test('namesCatalogue tells a misspelt reference from free words', async () => {
+  const { namesCatalogue } = await import('../extension/lookup.js');
+  for (const text of ['RIC XI Nero 1', 'Crawfrd 44/5', 'Price', 'Bopearachi 9C', 'cf. RIC 972', 'Seleucid Coins']) assert.equal(namesCatalogue(text), true, text);
+  for (const text of ['Nero', 'nero denarius', 'Athens tetradrachm', 'Ricci', 'owl tetradrachm', 'Alexander the Great']) assert.equal(namesCatalogue(text), false, text);
+});

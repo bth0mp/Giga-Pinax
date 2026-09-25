@@ -124,6 +124,13 @@ const SUPPORTED = new RegExp(`^(?:(?:RIC|RRC|SC|SCO|Cr)(?![a-z])|Craw|Price|Sele
 // Nor is a numbered part that names one after other words ("cf. RIC 972", "Lot 80: RIC 972", "cf. Craw. 44/5"), which would search a type as loose
 // text; "RIC –" (not in RIC) has no number. The Crawford names are the ones RRC's prefixPattern reads.
 const NAMED = /(?:^|[^\p{L}])(?:RIC|R\.I\.C|RRC|Cr|Craw(?:f|ford)?|Price|SC|Seleucid|Bop|Bopearachchi)(?!\p{L})/iu;
+// K-02: whether text sets out to name a catalogue — it begins like one of the supported catalogues, or a part of it names one with a number — so that
+// text the lookup cannot read is a misspelt reference, answered with the spellings, rather than free words a collector typed to find a coin.
+export function namesCatalogue(text) {
+  const value = String(text ?? '').replace(INVISIBLE, '').trim();
+  return SUPPORTED.test(value) || value.split(';').some((part) => /\d/.test(part) && NAMED.test(part));
+}
+
 // Sentence punctuation a selection drags along ("RIC 972;", "Hadrian 12,"); no catalogue's number ends in it.
 const unpunctuate = (value) => value.replace(/\s*[.,;:]+$/, '');
 // A reference as read: without that punctuation, nor the brackets or single quotes a dealer wraps it in ("(RIC 972)", "‘Price 23’."); brackets that
