@@ -10,7 +10,9 @@
 //            Western digits with a full stop, and Save settings with nothing touched succeeds.
 //
 // and the popup's frame, which only a real layout shows: its header and tabs stay put through a lot lookup after a list
-// of types, the card stays where it is when acsearch answers after it, and Ctrl+K and the skip link reach the Reference box.
+// of types, the card stays where it is when acsearch answers after it (and, at 400x600, the median shows on first paint),
+// Save saves in one step without opening a tab, a popup opened again draws its last answer without asking acsearch, a failed
+// Bopearachchi lookup searches nothing and keeps its error in view, and Ctrl+K and the skip link reach the Reference box.
 //
 // The rest of that list needs a signed-in acsearch session, a real auction page, a second browser or a person's eye.
 //
