@@ -3,7 +3,7 @@ import { CURRENCIES, formatMoney } from './core/money.js';
 // note is owed even where the import below could not run; only browser-api.js needs that tolerance.
 import { CURRENCY_NOT_SAVED } from './companion-preferences.js';
 import { projectExposure } from './core/records.js';
-import { lotsNeedingOutcome } from './core/projections.js';
+import { eventTiming, lotsNeedingOutcome } from './core/projections.js';
 import { recordDiagnostic } from './core/diagnostics.js';
 import { localDateAtInstant } from './core/reminders.js';
 import { buildResearchDraft, buildResearchQuery, collectCurrentLotCandidates, draftPageValues } from './current-lot.js';
@@ -259,15 +259,55 @@ export function buildWatchlistSummary(snapshot, now = new Date().toISOString()) 
       ? event.startsAt >= now
       : event.localDate >= localDateAtInstant(event.timeZone, now))
     .sort((left, right) => (left.startsAt ?? left.localDate).localeCompare(right.startsAt ?? right.localDate));
-  const dueEventIds = new Set((snapshot?.alerts ?? [])
-    .filter((alert) => ['due', 'claimed', 'delivered'].includes(alert.status) && alert.eventId)
+  // Auctions with a reminder going off now, and those with one that went off while the browser was closed: a missed reminder is no less owed an
+  // answer, so it is counted too, and named apart.
+  const eventsWith = (statuses) => new Set((snapshot?.alerts ?? [])
+    .filter((alert) => statuses.includes(alert.status) && alert.eventId)
     .map((alert) => alert.eventId));
+  const dueEventIds = eventsWith(['due', 'claimed', 'delivered']);
+  const missedEventIds = eventsWith(['missed']);
   const projected = projectExposure({ lots: snapshot?.lots ?? [] });
   const exposure = {};
   for (const currency of CURRENCIES) exposure[currency] = projected[currency] ?? {
     hammerMinor: 0, knownHammerPlusBpMinor: 0, bindingCount: 0, unknownPremiumCount: 0, byEvent: {},
   };
-  return { nextEvent: events[0] ?? null, dueAuctionCount: dueEventIds.size, exposure };
+  return { nextEvent: events[0] ?? null, dueAuctionCount: dueEventIds.size, missedAuctionCount: missedEventIds.size, exposure };
+}
+
+// "1 due · 1 missed", or "None due".
+export function dueText(summary) {
+  const parts = [summary?.dueAuctionCount ? `${summary.dueAuctionCount} due` : '', summary?.missedAuctionCount ? `${summary.missedAuctionCount} missed` : ''].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'None due';
+}
+
+// The next auction as the workspace's rows say it: "CNG Feature Auction 130 · sale day Wed 14 Oct · in 20 days".
+export function nextEventText(event, { now = new Date().toISOString(), locale = 'en-US' } = {}) {
+  if (!event) return 'No upcoming auction';
+  const { when, relative } = eventWhen(event, { now, locale });
+  const day = when && when !== 'Time unknown' ? `${when.charAt(0).toLocaleLowerCase(locale)}${when.slice(1)}` : '';
+  return [event.name, day, relative].filter(Boolean).join(' · ');
+}
+
+// An amount with the narrow symbol ("$", not "US$"), read from its minor units in the two places every stored amount has, as formatMoney reads them.
+export function narrowMoney(money, locale = 'en-US') {
+  const minor = BigInt(money.minor);
+  const absolute = minor < 0n ? -minor : minor;
+  const formatter = new Intl.NumberFormat(locale, { style: 'currency', currency: money.currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fraction = String(absolute % 100n).padStart(2, '0');
+  return formatter.formatToParts(minor < 0n ? -(absolute / 100n) : absolute / 100n).map((part) => (part.type === 'fraction' ? fraction : part.value)).join('');
+}
+
+// The coins that want the collector now, at most five: those whose auction has ended with no outcome, then those whose auction is next, soonest first.
+export function coinsToWatch(snapshot, { now = new Date().toISOString(), locale = 'en-US', limit = 5 } = {}) {
+  const events = new Map((snapshot?.auctionEvents ?? []).map((event) => [event.id, event]));
+  const ended = lotsNeedingOutcome(snapshot, now).map((lot) => ({ lot, text: `${lot.title} · ended, record the outcome` }));
+  const coming = (snapshot?.lots ?? [])
+    .filter((lot) => (lot?.outcome?.status ?? 'open') === 'open' && events.has(lot.auctionEventId))
+    .map((lot) => ({ lot, event: events.get(lot.auctionEventId), timing: eventTiming(events.get(lot.auctionEventId), now) }))
+    .filter(({ timing }) => ['soon', 'upcoming', 'started'].includes(timing.state))
+    .sort((left, right) => (left.timing.sortMs ?? Infinity) - (right.timing.sortMs ?? Infinity))
+    .map(({ lot, event }) => ({ lot, text: [lot.title, eventWhen(event, { now, locale }).relative].filter(Boolean).join(' · ') }));
+  return [...ended, ...coming].slice(0, limit);
 }
 
 function openExtensionPage(path) {
@@ -446,18 +486,43 @@ async function initCompanionPopup() {
     .then((tabs) => { if (capturableTab(tabs)) $('companion-current-lot').open = true; })
     .catch(() => { /* no tab to read: it stays folded */ });
 
+  // The Watchlist tab: the next auction and when, the auctions with a reminder going off or missed, the coins that want the collector now (each opening
+  // the workspace on that coin), and the bids in force, only in the currencies that hold one.
   const renderSummary = () => {
-    const summary = buildWatchlistSummary(snapshot);
-    $('companion-next-event').textContent = summary.nextEvent?.name ?? 'No upcoming auction';
-    $('companion-due-count').textContent = String(summary.dueAuctionCount);
+    const now = new Date().toISOString();
+    const locale = navigator.language;
+    const summary = buildWatchlistSummary(snapshot, now);
+    $('companion-next-event').textContent = nextEventText(summary.nextEvent, { now, locale });
+    $('companion-due-count').textContent = dueText(summary);
     // Lots whose auction has ended with no outcome recorded, and the way to the workspace queue that lists them.
     const ended = lotsNeedingOutcome(snapshot).length;
     $('companion-needs-outcome').hidden = ended === 0;
     $('companion-open-needs-outcome').textContent = `${ended} ${ended === 1 ? 'lot' : 'lots'} ended without an outcome`;
-    for (const currency of CURRENCIES) {
+    const coins = coinsToWatch(snapshot, { now, locale });
+    $('companion-coin-list').replaceChildren(...coins.map(({ lot, text }) => {
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'text-button';
+      button.textContent = text;
+      button.disabled = !bridge;
+      button.addEventListener('click', () => openLot(lot.id, 'companion-runtime-note'));
+      item.append(button);
+      return item;
+    }));
+    $('companion-coins').hidden = coins.length === 0;
+    const held = CURRENCIES.filter((currency) => summary.exposure[currency].hammerMinor > 0 || summary.exposure[currency].bindingCount > 0);
+    $('companion-exposure-list').replaceChildren(...(held.length ? held.map((currency) => {
       const item = summary.exposure[currency];
-      $('companion-exposure-' + currency).textContent = `${formatMoney({ currency, minor: item.hammerMinor }, navigator.language)}${item.unknownPremiumCount ? ` · ${item.unknownPremiumCount} premium unknown` : ''}`;
-    }
+      const row = document.createElement('li');
+      const name = document.createElement('span');
+      name.textContent = currency;
+      const amount = document.createElement('strong');
+      amount.id = `companion-exposure-${currency}`;
+      amount.textContent = `${narrowMoney({ currency, minor: item.hammerMinor }, locale)}${item.unknownPremiumCount ? ` · ${item.unknownPremiumCount} premium unknown` : ''}`;
+      row.append(name, amount);
+      return row;
+    }) : [Object.assign(document.createElement('li'), { className: 'companion-none', textContent: 'No active bids' })]));
   };
 
   // Every place a save button is put back asks the same question, so a page that cannot save never enables one by a side door.
@@ -610,6 +675,9 @@ async function initCompanionPopup() {
   const confirmSaved = (entry, line, anchor, extra = []) => {
     if (justSaved && justSaved !== entry) clearTimeout(justSaved.timer);
     justSaved = entry;
+    // What the line under it said of an earlier save (a failure, a removal) is over.
+    const hint = $(anchor);
+    if (hint && anchor !== 'upcoming-note') { hint.textContent = ''; hint.hidden = true; }
     const words = entry.event ? 'Saved to your watchlist with its sale day' : 'Saved to your watchlist';
     fillLine(line, [words, openAction(entry.lot.id, anchor), { label: 'Undo', name: 'Undo: take this coin off the watchlist', action: () => void undoSave(entry, line, anchor) }, ...extra]);
     speak(`${words}.`);
@@ -811,9 +879,7 @@ async function initCompanionPopup() {
     const result = await runVisibleAction(action, fallback);
     if (!result.ok) announce(result.message, true, anchor);
   };
-  for (const id of ['companion-open-workspace', 'companion-open-watchlist']) {
-    $(id).addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the watchlist.', 'companion-runtime-note'));
-  }
+  $('companion-open-watchlist').addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the watchlist.', 'companion-runtime-note'));
   $('companion-open-needs-outcome').addEventListener('click', () => void navigate(() => openWorkspace('watchlist', undefined, 'needs-outcome'),
     'Couldn’t open the watchlist.', 'companion-runtime-note'));
   $('open-workspace').addEventListener('click', () => void navigate(() => openWorkspace('watchlist'), 'Couldn’t open the workspace.'));

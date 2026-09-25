@@ -21,11 +21,9 @@
 .companion-card {padding:16px; border-top:1px solid var(--line); background:var(--surface);}
 .companion-card h2 {font:600 var(--text-h3)/1.25 var(--font-serif); color:var(--accent);}
 .companion-card h3 {margin:18px 0 8px; font:600 13px/1.3 var(--font-serif); color:var(--ink);}
-.companion-intro {margin:5px 0 16px; color:var(--muted); font-size:12px; line-height:1.5;}
 .companion-field-pair {display:grid; grid-template-columns:minmax(0,1fr) 92px; gap:10px;}
 .companion-optional {color:var(--muted); font-size:11px; font-weight:400;}
-.companion-heading-row {display:flex; align-items:flex-start; gap:10px;}
-.companion-heading-row .icon-button {margin-left:auto;}
+.companion-card > h2 {margin-bottom:12px;}
 .companion-summary {display:grid; grid-template-columns:2fr 1fr; gap:8px; margin:0;}
 .companion-summary div {padding:10px; background:var(--soft); border-radius:var(--radius-panel);}
 .companion-summary dt {color:var(--muted); font-size:11px;}
@@ -33,6 +31,11 @@
 .companion-exposure-list {list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
 .companion-exposure-list li {display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12px;}
 .companion-exposure-list strong {font-variant-numeric:tabular-nums; text-align:right;}
+.companion-exposure-list .companion-none {color:var(--muted);}
+/* The coins that want the collector now: each a row that opens the workspace on that coin. */
+.companion-coin-list {list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
+.companion-coin-list li {border-bottom:1px solid var(--line);}
+.companion-coin-list .text-button {display:block; width:100%; padding:8px 0; text-align:left; font-weight:600; overflow-wrap:anywhere;}
 /* Save and the capture buttons are secondary buttons (design-tokens.css); Save sits in the card's heading row at the small height. */
 .companion-save-watchlist {min-height:var(--control-h-sm); padding:0 12px;}
 .companion-current-lot {margin:0; border-bottom:1px solid var(--line);}

@@ -59,6 +59,8 @@ const {
   savesDirectly,
   savedLotsFor,
   savedLineText,
+  narrowMoney,
+  dueText,
 } = await import('../extension/companion-popup.js');
 
 class TestElement {
@@ -1174,4 +1176,59 @@ test('the workspace opens on the coin its address names', async () => {
   const unknown = await mountWorkspace({ background, hash: '#watchlist?lot=00000000-0000-4000-8000-00000000ffff' });
   for (let tick = 0; tick < 20; tick += 1) await settle();
   assert.notEqual(unknown.$('selected-title').textContent, 'Nero · As · Rome · AD 62–68');
+});
+
+// Loop 3 (G-11, WL-01): the Watchlist tab said "Next auction" with no date, four zero rows of exposure, and the same thing twice as an icon and a button.
+// It says when the next auction is, which coins want the collector now (each opening the workspace on that coin), and only the currencies that hold a
+// bid, with the narrow symbol; one button, no intro. Q-14: a reminder missed while the browser was closed is counted too, and named apart.
+test('the Watchlist tab says when, which coins, and only the bids that exist', async () => {
+  const markup = parseHtmlFile(new URL('../extension/popup.html', import.meta.url));
+  const panel = markup.getElementById('companion-panel-watchlist');
+  assert.equal(markup.getElementById('companion-open-workspace'), null, 'no second way to the same place');
+  assert.equal(panel.querySelectorAll('.companion-intro').length, 0);
+  assert.equal(panel.querySelectorAll('button').filter((button) => !button.closest('.companion-needs-outcome')).length, 1);
+  const now = new Date();
+  const inDays = (days) => new Date(now.getTime() + days * 86400000).toISOString().slice(0, 10);
+  const cng = { id: 'cng', name: 'CNG Feature Auction 130', eventKind: 'auction-day', precision: 'date-only', localDate: inDays(20), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+  const roma = { id: 'roma', name: 'Roma E-Sale 120', eventKind: 'auction-day', precision: 'date-only', localDate: '2020-01-10', timeZone: 'Europe/London' };
+  const lots = [
+    { id: 'a', title: 'Hadrian denarius', auctionEventId: 'roma', outcome: { status: 'open' } },
+    { id: 'b', title: 'Nero as', auctionEventId: 'cng', outcome: { status: 'open' }, activeBid: { amount: { currency: 'GBP', minor: 65000 }, buyerPremiumBps: 2000 } },
+    { id: 'c', title: 'Won coin', auctionEventId: 'cng', outcome: { status: 'won' } },
+  ];
+  const alerts = [{ eventId: 'cng', status: 'due' }, { eventId: 'roma', status: 'missed' }];
+  const snapshot = { ok: true, value: { lots, auctionEvents: [cng, roma], alerts, preferences: { currency: 'USD', revision: 1 } } };
+  const opened = [];
+  const create = globalThis.browser.tabs.create;
+  const getURL = globalThis.browser.runtime.getURL;
+  globalThis.browser.tabs.create = async ({ url }) => { opened.push(url); return { id: 9 }; };
+  globalThis.browser.runtime.getURL = (path) => `moz-extension://test/${path}`;
+  try {
+    const page = await loadCompanion({ sendMessage: async () => snapshot });
+    assert.match(page.element('companion-next-event').textContent, /^CNG Feature Auction 130 · sale day \w{3}, \w{3} \d+ · in 20 days$/);
+    assert.equal(page.element('companion-due-count').textContent, '1 due · 1 missed');
+    const rows = page.element('companion-coin-list').children.map((item) => item.children[0]);
+    assert.deepEqual(rows.map((button) => button.textContent), ['Hadrian denarius · ended, record the outcome', 'Nero as · in 20 days']);
+    assert.equal(page.element('companion-coins').hidden, false);
+    const exposure = page.element('companion-exposure-list').children;
+    assert.equal(exposure.length, 1, 'only the currency that holds a bid');
+    assert.equal(exposure[0].children[0].textContent, 'GBP');
+    assert.equal(exposure[0].children[1].textContent, '£650.00');
+    await rows[1].emit('click');
+    for (let tick = 0; tick < 20; tick += 1) await settle();
+    assert.deepEqual(opened, ['moz-extension://test/workspace.html#watchlist?lot=b']);
+    const empty = await loadCompanion({ sendMessage: async () => WORKING_SNAPSHOT });
+    assert.equal(empty.element('companion-due-count').textContent, 'None due');
+    assert.equal(empty.element('companion-next-event').textContent, 'No upcoming auction');
+    assert.equal(empty.element('companion-coins').hidden, true);
+    assert.deepEqual(empty.element('companion-exposure-list').children.map((item) => item.textContent), ['No active bids']);
+  } finally {
+    globalThis.browser.tabs.create = create;
+    globalThis.browser.runtime.getURL = getURL;
+  }
+  assert.equal(narrowMoney({ currency: 'USD', minor: 26000 }, 'en-GB'), '$260.00');
+  assert.match(narrowMoney({ currency: 'CHF', minor: 120000 }, 'en-US'), /^CHF\s1,200\.00$/);
+  assert.deepEqual([dueText({ dueAuctionCount: 0, missedAuctionCount: 0 }), dueText({ dueAuctionCount: 2, missedAuctionCount: 0 }), dueText({ dueAuctionCount: 0, missedAuctionCount: 1 })],
+    ['None due', '2 due', '1 missed']);
+  assert.equal(buildWatchlistSummary({ alerts: [{ eventId: 'x', status: 'missed' }, { eventId: 'x', status: 'missed' }, { eventId: 'y', status: 'acknowledged' }] }).missedAuctionCount, 1);
 });
