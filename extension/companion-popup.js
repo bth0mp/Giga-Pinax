@@ -561,6 +561,8 @@ async function initCompanionPopup() {
     save.hidden = true;
   };
   const forgetJustSaved = (where) => {
+    // What the line under Save said of the last card (a removal, a refusal) is not about the next one.
+    if (where === 'card') { $('companion-save-hint').textContent = ''; $('companion-save-hint').hidden = true; }
     if (justSaved?.where !== where) return;
     clearTimeout(justSaved.timer);
     justSaved = null;

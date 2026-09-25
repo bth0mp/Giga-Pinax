@@ -664,6 +664,9 @@ test('Save on a bare card saves the coin in one step, as the workspace would, an
     assert.equal(line.hidden, true);
     assert.equal(page.element('companion-save-hint').textContent, 'Removed from your watchlist.');
     assert.equal(page.element('companion-save-watchlist').hidden, false);
+    // What the line said of that card is not said of the next one.
+    page.card({ title: 'Price 23', reference: 'Price 23', pageUrl: 'https://numismatics.org/pella/id/price.23' });
+    assert.equal(page.element('companion-save-hint').hidden, true);
   } finally {
     globalThis.browser.tabs.create = create;
   }
