@@ -395,8 +395,8 @@ async function refreshStorageUsage() {
   const warning = $('storage-warning');
   warning.hidden = bytes < limit * STORAGE_WARN_SHARE;
   warning.textContent = bytes > limit
-    ? 'Your records fill the 5 MB Giga Pinax can keep in this browser: only changes that make them smaller can be saved. Export a backup, then remove old coins or comparables you no longer need.'
-    : 'Your records are filling the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or comparables you no longer need.';
+    ? 'Your records fill the 5 MB Giga Pinax can keep in this browser: only changes that make them smaller can be saved. Export a backup, then remove old coins or auctions you no longer need.'
+    : 'Your records are filling the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.';
 }
 
 // Data health read again on its own. The revision the page saves against follows the store only

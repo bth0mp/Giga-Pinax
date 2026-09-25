@@ -1564,7 +1564,7 @@ test('a schedule-changing command refused for its own sake does not blame remind
   }), context());
   assert.equal(bounded.ok, false);
   assert.equal(bounded.error.code, 'storage-bound');
-  assert.match(bounded.error.message, /^Saving this coin would take your records to 5\.\d\d MB, more than the 5 MB .* Export a backup, then remove old coins or comparables/);
+  assert.match(bounded.error.message, /^Saving this coin would take your records to 5\.\d\d MB, more than the 5 MB .* Export a backup, then remove old coins or auctions/);
   assert.doesNotMatch(bounded.error.message, /reminder/i, 'no reminder is involved in this one');
 });
 
@@ -2775,7 +2775,7 @@ test('X-01: a change that grows the data is kept up to the bound and refused one
   const reply = await createCommandWriter(storage, context()).commitCommand(save);
   assert.equal(reply.ok, false);
   assert.equal(reply.error.code, 'storage-bound');
-  assert.equal(reply.message, 'Saving this want would take your records to 5.01 MB, more than the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or comparables you no longer need.');
+  assert.equal(reply.message, 'Saving this want would take your records to 5.01 MB, more than the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.');
   assert.deepEqual(storage.read(), over, 'nothing is written');
 });
 

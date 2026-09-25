@@ -669,7 +669,7 @@ export function importFit(current, preview) {
     ok: verdict.ok,
     bytes: verdict.bytes,
     text: verdict.ok ? '' : `This import would not fit: your records would take ${megabytesText(verdict.bytes)}, more than the 5 MB ` +
-      'Giga Pinax can keep in this browser. Remove old coins or comparables here first, or import a backup with fewer records.',
+      'Giga Pinax can keep in this browser. Remove old coins or auctions here first, or import a backup with fewer records.',
   };
 }
 

@@ -75,7 +75,7 @@ const WHAT_GREW = new Map([
   ['draft.save', 'Keeping this page capture'], ['preferences.save', 'Saving these settings'],
   ['preferences.migrateIfAbsent', 'Saving your settings'], ['want.save', 'Saving this want'], ['want.found', 'Marking this want found'],
 ]);
-const OUT_OF_THE_BOUND = 'Export a backup, then remove old coins or comparables you no longer need.';
+const OUT_OF_THE_BOUND = 'Export a backup, then remove old coins or auctions you no longer need.';
 /**
  * The refusal of a change that would grow the records past the bound: what grew, and the way out that works.
  * @param {string} type
@@ -85,7 +85,7 @@ const OUT_OF_THE_BOUND = 'Export a backup, then remove old coins or comparables 
 function overTheBound(type, bytes) {
   const size = `${megabytesText(bytes)}, more than the 5 MB Giga Pinax can keep in this browser`;
   if (type === 'backup.import') {
-    return [`This backup does not fit: with it your records would take ${size}. Import a backup with fewer records, or remove old coins or comparables here first.`, 'document'];
+    return [`This backup does not fit: with it your records would take ${size}. Import a backup with fewer records, or remove old coins or auctions here first.`, 'document'];
   }
   if (type === 'quarantine.restore') {
     return [`Putting this record back would take your records to ${size}. ${OUT_OF_THE_BOUND} Then put it back.`, 'entryId'];

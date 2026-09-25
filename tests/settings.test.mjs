@@ -1750,7 +1750,7 @@ test('K-13: Settings shows how much of the 5 MB the records use, and warns from 
   const filling = await openSettings({ usage: { ok: true, value: { bytes: Math.round(4.1 * MiB), limit: 5 * MiB } } });
   assert.equal(filling.element('storage-used').textContent, '4.1 MB of 5 MB used');
   assert.equal(filling.element('storage-warning').hidden, false);
-  assert.equal(filling.element('storage-warning').textContent, 'Your records are filling the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or comparables you no longer need.');
+  assert.equal(filling.element('storage-warning').textContent, 'Your records are filling the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or auctions you no longer need.');
 
   const full = await openSettings({ usage: { ok: true, value: { bytes: 5 * MiB + 2000, limit: 5 * MiB } } });
   assert.equal(full.element('storage-used').textContent, '5.01 MB of 5 MB used');
