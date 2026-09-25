@@ -648,3 +648,13 @@ test('the popup calculator puts back what was typed, and a bare default no longe
     assert.equal(readCalculatorMemory(bad, now), null, JSON.stringify(bad));
   }
 });
+
+// Fix round, Important 1: the popup reads the session median before the preferred currency arrives; the currency the
+// median set is the collector's context, and the bare preferred-currency default must not undo it.
+test('an empty calculator keeps the median’s currency when the preferred currency arrives after it', async () => {
+  const session = { 'giga-pinax-session-median': { acsearch: { reference: 'RIC I² Nero 306', provider: 'acsearch', currency: 'GBP', median: 24000, count: 2, at: Date.now() } } };
+  const calculator = await mountCalculator({ snapshot: { ok: true, value: { preferences: { revision: 1, currency: 'USD', housePremiumPresets: [] } } }, session, options: { remember: true } });
+  assert.equal(calculator.field('Currency').value, 'GBP', 'the session read comes first');
+  calculator.mounted.setValues({ currency: 'USD' });
+  assert.equal(calculator.field('Currency').value, 'GBP', 'the preference second does not override it');
+});

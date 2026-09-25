@@ -671,7 +671,9 @@ export function mountBidCalculator(
     const fresh = Boolean(first) && !sessionMedians.some((item) => item.provider === first.provider && item.at === first.at);
     sessionMedians = found;
     if (fresh && amount.value.trim() === '' && mode.value !== 'budget' && currencyControl.value !== first.currency) {
-      currencyControl.value = first.currency; offerImportVat(); calculate();
+      // The lookup's currency is the collector's context now: the preferred-currency default arriving later does not
+      // undo it (the calculator counts as touched).
+      currencyControl.value = first.currency; touched = true; rememberTyped(); offerImportVat(); calculate();
     }
     showMedian();
   };
