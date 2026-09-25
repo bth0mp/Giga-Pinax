@@ -2488,3 +2488,14 @@ test('a won coin with no bid is costed by the store from the outcome terms it is
   assert.equal(refused.ok, false);
   assert.equal(refused.error.path, 'outcome.terms');
 });
+
+// Fix round, Minor 4: only a lot.delete's own reply is put back - the reply of any other command that holds a lot
+// (a lot.save here) is refused.
+test('lot.restore refuses the request id of a command that was not a delete', () => {
+  const save = command('lot.save', { expectedRevision: null, lot: { title: 'Nero', sourceLinks: [] } });
+  const saved = reduce(createEmptySnapshot(NOW), save);
+  const removed = reduce(saved.snapshot, command('lot.delete', { lotId: saved.value.id, expectedRevision: 0 })).snapshot;
+  const refused = applyCommand(removed, command('lot.restore', { deleteRequestId: save.requestId }), context());
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.path, 'deleteRequestId');
+});

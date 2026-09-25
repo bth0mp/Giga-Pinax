@@ -232,7 +232,8 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
 28. **What a won coin really cost.** In the workspace, add a coin, and on its **Bid** tab type a maximum of `1500` EUR
     and premium `25`; under **Fees** type **VAT on premium %** `19` and shipping `15`. The line under the premium reads
     `≈ €1,961.25 all-in · premium €375.00 · fees €86.25`. Select **Record placed bid**.
-    On **Outcome**, record **Won** with a hammer of `1300` EUR, tick **Add a won coin to collection history** and save.
+    On **Outcome**, record **Won** with a hammer of `1300` EUR, leave **Add this coin to your collection** ticked (it is
+    ticked by default for a first win) and save.
     Open **History**.
     *Expected:* the coin's card reads `EUR  Hammer 1,300.00 · Premium 325.00 · Fees 76.75 · Total 1,701.75` on one
     line, figures right-aligned, with "Premium 25% · VAT on premium 61.75 · shipping 15.00" under it; the collection
