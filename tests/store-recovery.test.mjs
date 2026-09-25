@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { parseHtmlFile } from './helpers/dom.mjs';
-import { mountRecovery } from '../extension/store-recovery.js';
+import { mountRecovery, mountWaitingCaptures } from '../extension/store-recovery.js';
 
 const NOW = '2026-09-25T10:00:00.000Z';
 const UNREADABLE = { ok: false, code: 'storage', message: 'Stored data is invalid: Expected an object.', reason: 'unreadable' };
@@ -25,4 +25,23 @@ test('X-02: the recovery notice goes under the header it is given, and first in 
   // The popup gives its header: one line in companion-popup.js.
   const source = readFileSync(new URL('../extension/companion-popup.js', import.meta.url), 'utf8');
   assert.match(source, /mountRecovery\(\{ document, bridge, reply, after: document\.querySelector\('\.popup-header'\) \}\)/);
+});
+
+// Review Minor 8: two captures gave a screen reader four buttons with two names; each is described by its own line.
+test('X-08: each waiting capture\'s Use and Discard are described by that capture\'s line', () => {
+  const document = parseHtmlFile(new URL('../extension/workspace.html', import.meta.url));
+  const draft = (id, host) => ({
+    id, kind: 'auction-capture', createdAt: '2026-09-25T09:48:00.000Z', expiresAt: '2026-09-26T09:48:00.000Z',
+    payload: { pageUrl: `https://${host}/lot/1` },
+  });
+  const section = mountWaitingCaptures({
+    document, drafts: [draft('d1', 'leunumismatik.com'), draft('d2', 'nomos.ch')], now: NOW, use() {}, discard() {},
+  });
+  const rows = section.querySelectorAll('.waiting-capture');
+  assert.equal(rows.length, 2);
+  const described = rows.map((row) => row.querySelectorAll('button').map((button) => document.getElementById(button.getAttribute('aria-describedby'))?.textContent));
+  assert.deepEqual(described, [
+    Array(2).fill('Captured an auction from leunumismatik.com 12 min ago · kept 24 h more'),
+    Array(2).fill('Captured an auction from nomos.ch 12 min ago · kept 24 h more'),
+  ]);
 });

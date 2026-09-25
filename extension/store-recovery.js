@@ -275,16 +275,19 @@ export function mountWaitingCaptures({ document, drafts, now, openId = null, use
     row.className = 'waiting-capture';
     row.style.margin = '4px 0';
     const text = document.createElement('span');
-    text.textContent = `${waitingCaptureText(draft, now)} · `;
+    text.id = `waiting-capture-${draft.id}`;
+    text.textContent = waitingCaptureText(draft, now);
     const button = (label, kind, act) => {
       const control = document.createElement('button');
       control.type = 'button';
       control.className = `${kind} btn-sm`;
       control.textContent = label;
+      // Every capture has a Use and a Discard, so the line beside them is what tells them apart (review Minor 8).
+      control.setAttribute('aria-describedby', text.id);
       control.addEventListener('click', () => act(draft));
       return control;
     };
-    row.append(text, button('Use', 'secondary', use), document.createTextNode(' '), button('Discard', 'quiet', discard));
+    row.append(text, document.createTextNode(' · '), button('Use', 'secondary', use), document.createTextNode(' '), button('Discard', 'quiet', discard));
     return row;
   });
   section.replaceChildren(...rows);
