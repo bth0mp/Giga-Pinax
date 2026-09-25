@@ -16,7 +16,7 @@ import {
 import {
   COIN_REMOVED_NOTICE, SELECTED_LOT_EDITORS, buildAttachEventCommand, buildBidSaveCommand, buildGroupReorderCommand,
   buildLotSaveCommand, buildLotUndoCommand, commandReplacedRevisions, commandWasCommitted, conflictNoteMessage,
-  draftToConsumeAfterLotSave, editorRecord, editorsWithChangedBasis, eventAttachDecision, lotSaveFollowup, planCommit,
+  draftToConsumeAfterLotSave, editorRecord, editorsWithChangedBasis, eventAttachDecision, lotSaveFollowup, planCommit, rebaseSentence, rebaseTypedFields,
   removedCoinNotice, removedHereAfterDeleteReply, requestId, selectionAfterSnapshot, submissionContext,
 } from './workspace-editing.js';
 import {
@@ -461,7 +461,8 @@ async function initWorkspace() {
       if (editor === 'lot') {
         // A refused value is named, and its folded section opened, so the collector can see what to change.
         const field = lotFieldForPath(reply.path ?? reply.error?.path); const control = field ? $('lot-form').elements[field] : null;
-        const status = $('lot-action-status'); status.replaceChildren(document.createTextNode(`${reply.message ?? 'The coin could not be saved.'}${control ? ` (${fieldLabel(control)})` : ''}`)); status.classList.add('error');
+        const message = reply.code === 'conflict' ? conflictWords('lot') : `${reply.message ?? 'The coin could not be saved.'}${control ? ` (${fieldLabel(control)})` : ''}`;
+        const status = $('lot-action-status'); status.replaceChildren(document.createTextNode(message)); status.classList.add('error');
         if (control) { const section = sectionOf(control); if (section) section.open = true; control.focus(); }
         const existingLotId = reply.existingLotId ?? reply.error?.existingLotId;
         if (reply.code === 'duplicate' && existingLotId) {
@@ -490,7 +491,7 @@ async function initWorkspace() {
       }
       released();
       // The lot form has named the refused field in its own line already.
-      if (!removed && editor !== 'lot') say(reply.message, true);
+      if (!removed && editor !== 'lot') say(reply.code === 'conflict' ? conflictWords(editor, reply.message) : reply.message, true);
       return reply;
     }
     const refreshed = await commitAndRefresh(reply.value);
@@ -515,16 +516,49 @@ async function initWorkspace() {
     event.preventDefault();
     event.returnValue = '';
   });
-  // The banner names the forms whose records moved, so only those are discarded: unsaved input in
-  // an editor nothing else touched is still the collector's.
-  $('reload-snapshot').addEventListener('click', () => {
+  // A save refused because its record moved on says so in the collector's words (X-07).
+  const CONFLICT_RECORD = { lot: 'coin', bid: 'coin', outcome: 'coin', event: 'auction', group: 'group', want: 'want', wantlist: 'want', evidence: 'comparable' };
+  const conflictWords = (editor, fallback = '') => (CONFLICT_RECORD[editor]
+    ? `This ${CONFLICT_RECORD[editor]} changed in another view. Select Reload committed data to see the change; what you typed stays in the form until then.`
+    : fallback);
+  // The banner names the forms whose records moved, so only those are reloaded, and each is rebased rather than
+  // emptied (X-07): a field the collector typed in that the other view did not change keeps their typing, every other
+  // field follows the stored record, and the form's line names both. An editor nothing else touched is still the
+  // collector's.
+  $('reload-snapshot').addEventListener('click', async () => {
     const conflicted = editorsWithChangedBasis(snapshot, dirtyEditors, editorBases, savesInFlight);
     if (conflicted.includes('lot')) lotInteractionGeneration += 1;
-    for (const editor of conflicted) { dirtyEditors.delete(editor); editorBases.delete(editor); editorVersions.delete(editor); resetEditor(editor); }
+    const typed = new Map(conflicted.filter((editor) => editorFormValues[editor] && editorBases.get(editor)?.record).map((editor) => {
+      const elements = $(`${editor}-form`).elements; const basis = editorBases.get(editor);
+      const values = Object.fromEntries(Object.keys(editorFormValues[editor](basis.record)).map((field) => [field, elements[field].value]));
+      return [editor, { basis, values, provenance: editor === 'lot' ? provenanceValues() : null }];
+    }));
+    for (const editor of conflicted) { dirtyEditors.delete(editor); editorBases.delete(editor); editorVersions.delete(editor); resetEditor(editor); clearFormStatus(...(FORM_STATUS[editor] ? [editor] : [])); }
     updateDirtyMarks();
-    void refresh();
     $('conflict-note').hidden = true;
+    const refreshed = await refresh();
+    if (!refreshed.ok) return;
+    for (const [editor, { basis, values, provenance }] of typed) {
+      const record = editorRecord(snapshot, editor, basis.id);
+      if (!record || dirtyEditors.has(editor)) continue;
+      const plan = rebaseTypedFields(editorFormValues[editor](basis.record), editorFormValues[editor](record), values);
+      const elements = $(`${editor}-form`).elements;
+      for (const field of plan.kept) elements[field].value = values[field];
+      const kept = plan.kept.map((field) => fieldLabel(elements[field]));
+      // Sourced provenance is a list of its own: kept as typed where the other view left it alone.
+      if (editor === 'lot' && JSON.stringify(basis.record.provenanceNotes ?? []) === JSON.stringify(record.provenanceNotes ?? [])
+        && JSON.stringify(provenance) !== JSON.stringify(provenanceFromRecord(basis.record))) {
+        $('provenance-editor').replaceChildren(); for (const entry of provenance ?? []) appendProvenanceEditor(entry);
+        kept.push('Sourced provenance');
+      }
+      const updated = plan.updated.map((field) => fieldLabel(elements[field]));
+      if (kept.length) { dirtyEditors.add(editor); editorVersions.set(editor, (editorVersions.get(editor) ?? 0) + 1); if (editor === 'lot') { openFilledGroups(record.id); refreshCounts($('lot-form')); renderLotWantMatch(); } }
+      if (FORM_STATUS[editor] && (kept.length || updated.length)) formStatus(editor, rebaseSentence(updated, kept));
+    }
+    updateDirtyMarks();
   });
+  // A record's sourced provenance as the editor reads its rows back.
+  const provenanceFromRecord = (record) => (record?.provenanceNotes ?? []).map((entry) => ({ id: entry.id, text: entry.text, sourceUrl: entry.sourceUrl, recordedAt: entry.recordedAt, ...(entry.auctionDate ? { auctionDate: entry.auctionDate } : {}) }));
   $('retry-uncertain').addEventListener('click', () => {
     if (!pendingRetry) return;
     // The same request, resubmitted as it was first submitted: anything typed since the attempt

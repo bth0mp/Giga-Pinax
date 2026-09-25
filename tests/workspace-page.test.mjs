@@ -97,7 +97,9 @@ test('reload committed data refills only the form whose record another tab chang
   assert.equal(tabA.conflictBanner(), '');
   const details = tabA.$('lot-form').elements;
   assert.equal(details.title.value, 'Nero, denarius (corrected)', 'the details form was refilled from the saved record');
-  assert.equal(details.notes.value, '');
+  // X-07: the notes the other tab never touched keep what was typed, and the form's line says so.
+  assert.equal(details.notes.value, 'Tab A notes');
+  assert.equal(tabA.$('lot-action-status').textContent, 'Title was updated elsewhere; what you typed in Notes is kept.');
   assert.equal(tabA.$('event-form').hidden, false);
   assert.equal(tabA.$('event-form').elements.name.value, 'Draft auction', 'the auction form keeps every word');
   assert.equal(tabA.blocksUnload(), true, 'the auction form is still unsaved');
@@ -2327,4 +2329,27 @@ test('a coin with no auction says "No sale date · Add", and Add auction beside 
   assert.equal(page.$('lot-add-auction').hidden, true);
   await page.click('new-lot');
   assert.equal(page.$('selected-no-sale').hidden, true, 'a new coin has nothing to attach to yet');
+});
+
+// X-07: a save refused because another window changed the coin says so plainly; Reload committed data keeps the typing
+// the other window did not touch, clears the stale refusal, and the next save stores both windows' changes.
+test('reload after a conflict keeps the fields the other window did not change, and the next save stores both', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const tabA = await mountWorkspace({ background, hash: '#watchlist' });
+  const tabB = await mountWorkspace({ background, hash: '#watchlist' });
+  await tabA.openCoin('Nero, denarius'); await tabB.openCoin('Nero, denarius');
+  await tabB.typeDetails('notes', 'Flan crack at 3 o’clock');
+  await tabA.typeDetails('title', 'Nero, denarius (corrected)');
+  await tabA.saveDetails(); await settle();
+  await tabB.saveDetails();
+  assert.equal(tabB.$('lot-action-status').textContent, 'This coin changed in another view. Select Reload committed data to see the change; what you typed stays in the form until then.');
+  await tabB.click('reload-snapshot');
+  const details = tabB.$('lot-form').elements;
+  assert.equal(details.title.value, 'Nero, denarius (corrected)');
+  assert.equal(details.notes.value, 'Flan crack at 3 o’clock');
+  assert.equal(tabB.$('lot-action-status').textContent, 'Title was updated elsewhere; what you typed in Notes is kept.', 'the stale refusal is gone');
+  assert.equal(tabB.blocksUnload(), true, 'the kept notes are still unsaved');
+  await tabB.saveDetails();
+  const stored = storedLot(background, 'Nero, denarius (corrected)');
+  assert.equal(stored.notes, 'Flan crack at 3 o’clock', 'both windows’ changes are stored');
 });

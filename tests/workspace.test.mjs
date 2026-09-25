@@ -1575,3 +1575,16 @@ test('a past sale is written once in the past tense with its year, and the aucti
   assert.deepEqual(upcoming, [soon, next, undated], 'soonest first, the undated last');
   assert.deepEqual(past, [day, closes, starts], 'newest first');
 });
+
+// X-07: what a reload keeps and what it takes from the other window, in one line.
+test('a reload keeps typed fields the other window left alone and names what changed', async () => {
+  const { rebaseTypedFields, rebaseSentence } = await import('../extension/workspace-editing.js');
+  const before = { title: 'Nero', notes: '', lotNumber: '12' };
+  const after = { title: 'Nero (corrected)', notes: '', lotNumber: '12' };
+  assert.deepEqual(rebaseTypedFields(before, after, { title: 'Nero', notes: 'Toned', lotNumber: '12' }), { kept: ['notes'], updated: ['title'] });
+  assert.deepEqual(rebaseTypedFields(before, after, { title: 'Nero, As', notes: '', lotNumber: '12' }), { kept: [], updated: ['title'] }, 'a field both changed follows the store');
+  assert.equal(rebaseSentence(['Title'], ['Notes']), 'Title was updated elsewhere; what you typed in Notes is kept.');
+  assert.equal(rebaseSentence(['Title', 'Reference'], ['Notes', 'Lot number shown']), 'Title and Reference were updated elsewhere; what you typed in Notes and Lot number shown is kept.');
+  assert.equal(rebaseSentence([], ['Notes']), 'What you typed in Notes is kept.');
+  assert.equal(rebaseSentence([], []), '');
+});
