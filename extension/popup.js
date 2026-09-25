@@ -209,8 +209,15 @@ function resetCopyLabel() {
 }
 
 // A currency re-fetch keeps the collector's own decisions (keepCuration): acsearch and CoinArchives give a lot the same id in every currency.
+// K-11: while acsearch has no prices to show, the free CoinArchives search is the way on, so its button is the filled one.
+function offerCoinArchives(filled) {
+  $('coinarchives-prices-button').classList.toggle('primary-button', filled);
+  $('coinarchives-prices-button').classList.toggle('secondary-button', !filled);
+}
+
 function clearAcsearchPrices({ keepCuration = false } = {}) {
   priceRequestId += 1;
+  offerCoinArchives(false);
   if (!keepCuration) priceCuration.reset();
   shownPrices = null;
   keepMedian('acsearch', null);
@@ -1361,6 +1368,7 @@ async function runPrices(term, currency, { remember = true, context = researchCo
   $('prices-panel').dataset.state = '';
   pendingPrices = null;
   renderPriceFilters();
+  offerCoinArchives(true);
   if (outcome.status === 'signed-out') showPricesNote(SIGN_IN_MESSAGE, true);
   else if (outcome.status === 'empty') showPricesNote(`acsearch returned no sales for “${outcome.term}”. Try a broader term.`, false);
   else if (outcome.status === 'unpriced') {

@@ -76,7 +76,8 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     included is counted, and never counted as a citation. **Copy summary** says the same.
 
 8. **The signed-out note.** Repeat the same lookup in a private window where acsearch is not signed in.
-    *Expected:* the sign-in note appears and points at acsearch. It must not appear in step 7, and it must not appear
+    *Expected:* the note says acsearch shows hammer prices to signed-in subscribers, points to **Get CoinArchives
+    prices** below (now the filled button) and to **Sign in ↗**. It must not appear in step 7, and it must not appear
     merely because the only hits are lots that have yet to be sold.
 
 9. **A merge import preview that really overwrites something.** A merge keeps whichever copy of a record was written

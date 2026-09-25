@@ -41,7 +41,7 @@
           <label for="quick-reference">Reference</label>
           <div id="quick-search" class="search-row quick-search"><input id="quick-reference" name="quick" maxlength="3000" autocomplete="off" spellcheck="false" autofocus aria-keyshortcuts="Control+K Meta+K" placeholder="Reference or pasted lot text" aria-describedby="form-error"><button id="lookup-button" class="primary-button" type="submit"><span id="lookup-label">Look up</span></button></div>
           <p id="lookup-prompt" class="lookup-prompt" hidden>Reference changed. Select “Look up” to check it.</p>
-          <div id="first-run" class="first-run" hidden><div class="example-row"><span class="field-hint">Try</span><ul id="example-list" class="recent-list example-list" aria-label="Example references"></ul></div><p id="quick-help" class="field-hint">Prices from acsearch follow the lookup.</p><p id="workspace-help" class="field-hint">Save a coin to track its auction, bid and outcome in the workspace.</p></div>
+          <div id="first-run" class="first-run" hidden><div class="example-row"><span class="field-hint">Try</span><ul id="example-list" class="recent-list example-list" aria-label="Example references"></ul></div><p id="quick-help" class="field-hint">Prices follow from acsearch (subscription) and CoinArchives (free).</p><p id="workspace-help" class="field-hint">Save a coin to track its auction, bid and outcome in the workspace.</p></div>
           <nav id="recent" class="recent" aria-label="Recent lookups" hidden><span class="field-hint recent-label">Recent</span><ul id="recent-list" class="recent-list"></ul><button id="recent-more" class="text-button recent-more" type="button" aria-expanded="false" aria-controls="recent-list" hidden>More</button></nav>
         </div>
         <div class="reference-body">
@@ -116,7 +116,7 @@
         </details>
         <section class="coinarchives-prices" aria-labelledby="coinarchives-prices-title">
           <div class="provider-heading"><h3 id="coinarchives-prices-title">CoinArchives</h3><a id="coinarchives-link" class="provider-link" href="https://www.coinarchives.com/" target="_blank" rel="noopener noreferrer">results <span aria-hidden="true">↗</span></a></div>
-          <div class="coinarchives-heading"><p class="field-hint">Public auction results</p><button id="coinarchives-prices-button" class="secondary-button" type="button"><span id="coinarchives-prices-label">Get CoinArchives prices</span></button></div>
+          <div class="coinarchives-heading"><p id="coinarchives-hint" class="field-hint">Free public results, no account</p><button id="coinarchives-prices-button" class="secondary-button" type="button"><span id="coinarchives-prices-label">Get CoinArchives prices</span></button></div>
           <p id="coinarchives-prices-error" class="form-error" role="alert" hidden></p>
           <p id="coinarchives-prices-note" class="price-note" hidden></p>
           <div id="coinarchives-prices-panel" hidden>

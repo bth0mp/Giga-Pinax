@@ -3044,3 +3044,28 @@ test('a ruler typed alone leaves Refine ready: his number and Search look up his
   assert.equal(JSON.stringify([lookedUp[0].catalogue, lookedUp[0].volume, lookedUp[0].section, lookedUp[0].number]), '["RIC","I (2nd edition)","Nero","306"]');
   assert.equal(popup.element('result').hidden, false);
 });
+
+// Loop 6 (K-11): without an acsearch subscription the note sent a newcomer to sign in and nowhere else. It says what acsearch is, points to the free
+// CoinArchives search below, and that search's button is the filled one while acsearch shows no prices.
+test('a signed-out note names the subscription and the free CoinArchives search, whose button is filled until acsearch prices', async () => {
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.equal(markup.getElementById('coinarchives-hint').textContent, 'Free public results, no account');
+  assert.equal(markup.getElementById('quick-help').textContent, 'Prices follow from acsearch (subscription) and CoinArchives (free).');
+  let answer = { status: 'signed-out' };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => answer });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-note-text').textContent,
+    'Hammer prices come from acsearch.info, which shows them to subscribers who are signed in. Select “Get CoinArchives prices” below for free public results, or sign in to acsearch and select “Get prices”:');
+  assert.equal(popup.element('signin-link').hidden, false);
+  const button = popup.element('coinarchives-prices-button');
+  assert.equal(button.classList.contains('primary-button'), true);
+  assert.equal(button.classList.contains('secondary-button'), false);
+  answer = oneSale;
+  await popup.element('prices-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('prices-panel').hidden, false);
+  assert.equal(button.classList.contains('primary-button'), false);
+  assert.equal(button.classList.contains('secondary-button'), true);
+});

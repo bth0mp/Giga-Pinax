@@ -10,7 +10,8 @@ const PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact numismatics.o
 const ACSEARCH_NETWORK_MESSAGE = 'Couldn’t reach acsearch. Check your connection and try again.';
 const ACSEARCH_TOO_LARGE_MESSAGE = 'acsearch sent a reply too large to read, so no prices are shown. Try a narrower search term.';
 const ACSEARCH_PERMISSION_MESSAGE = 'Giga Pinax needs permission to contact acsearch.info to fetch prices. Select “Get prices” again to allow it.';
-const SIGN_IN_MESSAGE = 'acsearch didn’t show prices. Sign in with an acsearch account that includes hammer prices, then select “Get prices”.';
+// K-11: a newcomer does not know that acsearch is a subscription archive, nor that the CoinArchives block below is free and needs no account.
+const SIGN_IN_MESSAGE = 'Hammer prices come from acsearch.info, which shows them to subscribers who are signed in. Select “Get CoinArchives prices” below for free public results, or sign in to acsearch and select “Get prices”:';
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
 const ACSEARCH_HOME = 'https://www.acsearch.info/';
