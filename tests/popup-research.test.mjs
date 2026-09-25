@@ -851,9 +851,10 @@ test('a result that does not cite the reference is left out of the median and co
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.match(popup.element('median-amount').textContent, /100/);
-  assert.equal(popup.element('cited-count').hidden, false);
-  // The line names the reference, and its figures are the ones the median beside it rests on.
-  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23');
+  // Loop 6 (K-16): the median's own sentence names what it rests on, and what it was drawn from is its bracket; the filter's line is folded in.
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing Price 23, \d{4}(?:–\d{4})?$/);
+  assert.equal(popup.element('sale-period').textContent, '(2 results)');
+  assert.equal(popup.element('cited-count').hidden, true);
   assert.equal(popup.element('curation-count').textContent, '1 included · 1 excluded');
   assert.match(popup.element('announcement').textContent, /1 of 2 results cite Price 23/);
   const toggle = popup.element('sale-list').children[1].children[2];
@@ -861,12 +862,15 @@ test('a result that does not cite the reference is left out of the median and co
   await toggle.emit('click');
   assert.match(popup.element('median-amount').textContent, /200/);
   // Both sales are counted now, but only one of them cites the reference, and the line says so (fix round 1 of the 0.33 review).
+  assert.equal(popup.element('cited-count').hidden, false);
   assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23; 2 of 2 counted');
+  assert.match(popup.element('sale-strength').textContent, /^Median of 2 sales, \d{4}(?:–\d{4})?$/);
   // The redrawn row keeps the keyboard where it was.
   assert.equal(popup.element('sale-list').children[1].children[2].focused, 1);
   await popup.element('reset-curation').emit('click');
   assert.match(popup.element('median-amount').textContent, /100/);
-  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23');
+  assert.equal(popup.element('cited-count').hidden, true);
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing Price 23, \d{4}(?:–\d{4})?$/);
 });
 
 // 0.32 review: a filter a collector can neither see nor switch off is a median he cannot check.
@@ -920,7 +924,7 @@ test('a typed term that names the ruler inside the citation keeps the filter on'
   await settle();
   assert.equal(popup.element('citing-row').hidden, false);
   assert.match(popup.element('median-amount').textContent, /100/);
-  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite RIC 306');
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing RIC 306, \d{4}(?:–\d{4})?$/);
 });
 
 // A page of descriptions the filter cannot read (a provider that returns none, a layout it no longer knows) would otherwise empty the median.
@@ -960,7 +964,7 @@ test('the page’s cap is reported even when the filters drop most of it', async
   await popup.element('reference-form').emit('submit');
   await settle();
   assert.match(popup.element('price-note').textContent, /acsearch returns the 100 most recent sales/);
-  assert.match(popup.element('sale-period').textContent, /^100\+ matches on acsearch/);
+  assert.match(popup.element('sale-period').textContent, /^\(100\+ results\)$/);
 });
 
 // Reset undoes the collector's own decisions only, so it is offered as the way back only where it would bring a sale back.
@@ -1007,7 +1011,7 @@ test('the denomination toggle is offered by the verified card and filters on its
   popup.element('denomination-filter').checked = true;
   await popup.element('denomination-filter').emit('change');
   assert.match(popup.element('median-amount').textContent, /100/);
-  assert.match(popup.element('cited-count').textContent, /1 of 2 results name “tetradrachm”/);
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing Price 23\ and\ naming\ “tetradrachm”, \d{4}(?:–\d{4})?$/);
   popup.element('denomination-filter').checked = false;
   await popup.element('denomination-filter').emit('change');
   assert.match(popup.element('median-amount').textContent, /200/);
@@ -1130,8 +1134,9 @@ test('a period without a citing row is explained, not counted whole', async () =
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  // The N of M line counts the period's own rows, so a page-wide count cannot stand in for it.
-  assert.equal(popup.element('cited-count').textContent, '3 of 5 results cite Price 23');
+  // The N of M line counts the period's own rows, so a page-wide count cannot stand in for it. Loop 6 (K-16): folded into the median's sentence.
+  assert.match(popup.element('sale-strength').textContent, /^Median of 3 sales citing Price 23, \d{4}(?:–\d{4})?$/);
+  assert.equal(popup.element('sale-period').textContent, '(5 results)');
   assert.match(popup.element('median-amount').textContent, /300/);
   await popup.element('period').emit('change', { target: { value: '2y' } });
   assert.equal(popup.element('cited-count').textContent, '0 of 2 results cite Price 23');
@@ -1151,7 +1156,8 @@ test('a row excluded by hand is no longer counted as a citation', async () => {
   await toggle().emit('click');
   assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23; 2 of 2 counted');
   await toggle().emit('click');
-  assert.equal(popup.element('cited-count').textContent, '1 of 2 results cite Price 23');
+  assert.equal(popup.element('cited-count').hidden, true);
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing Price 23, \d{4}(?:–\d{4})?$/);
   assert.equal(popup.element('curation-count').textContent, '1 included · 1 excluded');
 });
 
@@ -1490,7 +1496,8 @@ test('a bare RIC number with a single type prices the type that was found', asyn
   await settle();
   assert.deepEqual(fetched, ['Caracalla ("RIC 237" "RIC IV 237" "RIC IV, 237")']);
   assert.equal(popup.element('prices-panel').hidden, false);
-  assert.equal(popup.element('cited-count').textContent, '1 of 3 results cite RIC 237');
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing RIC 237, \d{4}(?:–\d{4})?$/);
+  assert.equal(popup.element('sale-period').textContent, '(3 results)');
 });
 
 // 0.33 review, fix round 1: a bare RIC number starts no price research, so a failed Check online had no auction search below to offer and said
@@ -1572,7 +1579,7 @@ test('a row included by hand is counted, not said to cite the reference', async 
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.equal(popup.element('cited-count').textContent, '1 of 3 results cite Price 23');
+  assert.match(popup.element('sale-strength').textContent, /^Median of 1 sale citing Price 23, \d{4}(?:–\d{4})?$/);
   await popup.element('sale-list').children[1].children[2].emit('click');
   const line = '1 of 3 results cite Price 23; 2 of 3 counted';
   assert.equal(popup.element('cited-count').textContent, line);
@@ -1613,9 +1620,9 @@ test('the matches line adds "+" only where the page may not hold the whole perio
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.match(popup.element('sale-period').textContent, /^100\+ matches on acsearch$/);
+  assert.equal(popup.element('sale-period').textContent, '(100+ results)');
   await popup.element('period').emit('change', { target: { value: '5y' } });
-  assert.match(popup.element('sale-period').textContent, /^50 matches on acsearch$/);
+  assert.equal(popup.element('sale-period').textContent, '(50 results)');
   // A full page every lot of which falls inside the period may be followed by more of them.
   const recent = lots.map((entry, index) => ({ ...entry, date: daysAgo(30 + index) }));
   const again = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots: recent }) });
@@ -1623,7 +1630,7 @@ test('the matches line adds "+" only where the page may not hold the whole perio
   await again.element('reference-form').emit('submit');
   await settle();
   await again.element('period').emit('change', { target: { value: '5y' } });
-  assert.match(again.element('sale-period').textContent, /^100\+ matches on acsearch$/);
+  assert.equal(again.element('sale-period').textContent, '(100+ results)');
 });
 
 // 0.33 review (P10): "Check online" carried a class no stylesheet the popup loads defines, so it drew as the browser's bare default button.
@@ -2203,12 +2210,13 @@ test('the acsearch panel reads as one stat block with one basis line', async () 
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.equal(popup.element('sale-strength').textContent, '3 sales · 2025');
+  // Loop 6 (K-16): one sentence, "Median of 3 sales citing Price 23, 2025 (4 results) · last $300, 1 Jun 2025"; no second line of counts.
+  assert.equal(popup.element('sale-strength').textContent, 'Median of 3 sales citing Price 23, 2025');
+  assert.equal(popup.element('sale-period').textContent, '(4 results)');
   const last = popup.element('last-sale').children;
-  assert.equal(last[0], 'last $300 on ');
+  assert.equal(last[0], 'last $300, ');
   assert.equal(last[1].textContent, '1 Jun 2025');
-  assert.equal(popup.element('cited-count').textContent, '3 of 4 results cite Price 23');
-  assert.equal(popup.element('sale-period').textContent, '4 matches on acsearch');
+  assert.equal(popup.element('cited-count').hidden, true);
   assert.equal(popup.element('range-all').textContent, 'all $220–$380');
   // Three sales in one year draw no strip, so the basis line says nothing about one.
   assert.equal(popup.element('price-note').textContent, 'Hammer only, no premium, tax or shipping');
@@ -2450,12 +2458,17 @@ test('Change search never wraps; the stat lines wrap inside a held height; the t
 });
 
 test('each stat line carries its whole text as a tooltip, since a narrow panel may cut it', async () => {
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => mixedSales });
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => mixedSales });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.equal(popup.element('stat-sales').title, `${popup.element('sale-strength').textContent} · ${popup.element('last-sale').children.map((part) => part.textContent ?? part).join('')}`);
-  assert.equal(popup.element('stat-counts').title, `${popup.element('cited-count').textContent} · ${popup.element('sale-period').textContent}`);
+  assert.equal(popup.element('stat-sales').title,
+    `${popup.element('sale-strength').textContent} ${popup.element('sale-period').textContent} · ${popup.element('last-sale').children.map((part) => part.textContent ?? part).join('')}`);
+  assert.equal(popup.element('stat-sales').title, 'Median of 1 sale citing Price 23, 2025 (2 results) · last $100, 1 Jan 2025');
+  // A line the collector's own decisions leave beside the sentence carries its whole text too.
+  await popup.element('sale-list').children[1].children[2].emit('click');
+  assert.equal(popup.element('stat-counts').title, popup.element('cited-count').textContent);
+  assert.equal(popup.element('stat-counts').title, '1 of 2 results cite Price 23; 2 of 2 counted');
 });
 
 test('the Reference box is described only by its error line', () => {
@@ -2492,7 +2505,7 @@ test('the coverage line names future-dated lots apart from uncounted prices', as
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();
-  assert.equal(popup.element('sale-period').textContent, '3 matches on acsearch · 1 future-dated lot not counted');
+  assert.equal(popup.element('sale-period').textContent, '(3 results, 1 future-dated lot not counted)');
 });
 
 // Loop 3 (G-03): in the 600 px popup the median was on the bottom edge. What stood above it takes less room without losing anything: Save is a small

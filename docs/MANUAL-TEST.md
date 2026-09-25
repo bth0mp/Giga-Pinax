@@ -61,8 +61,8 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
 
 7. **Price check on a real signed-in acsearch session.** Sign in to acsearch in the same browser with an account that
     shows hammer prices. Look up `Price 23` and select **Get prices**.
-    *Expected:* the query shows beside **Change search**, and a line of the form "N of M results cite Price 23"; the median is taken
-    from the citing results only, and the rest are still listed under **Inspect sales**. No sign-in note appears. The
+    *Expected:* the query shows beside **Change search**, and under the median one sentence of the form "Median of N sales citing
+    Price 23, YYYY–YYYY (M results, K unpriced) · last …"; the median is taken from the citing results only, and the rest are still listed under **Inspect sales**. No sign-in note appears. The
     automated fixtures for this page are synthetic, so unless a scrubbed real page has been added to
     `tests/fixtures/acsearch-real/`, this is the only check that the signed-in page is read correctly.
     Open the same search on acsearch itself and compare two of the listed prices, date and hammer, with the rows under
@@ -72,8 +72,9 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     --account YOUR_NAME --account YOUR_EMAIL`; [the folder's README](../tests/fixtures/acsearch-real/README.md) says how
     to review it before committing it.
     Under **Inspect sales**, include by hand one row that does not cite Price 23.
-    *Expected:* the line now reads "N of M results cite Price 23; K of M counted", with K one more than N: the row you
-    included is counted, and never counted as a citation. **Copy summary** says the same.
+    *Expected:* the sentence now reads "Median of K sales, …" with a line beside it, "N of M results cite Price 23; K of M
+    counted", K one more than N: the row you included is counted, and never counted as a citation. **Copy summary** says
+    the same.
 
 8. **The signed-out note.** Repeat the same lookup in a private window where acsearch is not signed in.
     *Expected:* the note says acsearch shows hammer prices to signed-in subscribers, points to **Get CoinArchives

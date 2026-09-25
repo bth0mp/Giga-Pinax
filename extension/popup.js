@@ -996,7 +996,6 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   $('sale-details').hidden = !visibility.curation;
   // How far to trust the median (its strength, the sales it rests on and their years), then what those were drawn from. Lots with no price at all
   // (unsold, unpriced) are told apart from prices that could not be counted (another currency, an unread format).
-  const years = summary.earliest === null ? '' : ` · ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
   const counts = priceCuration.counts(periodLots);
   // Nothing counted: either the period holds no sale with a price, or every sale in it is excluded. Reset undoes only the collector's own decisions,
   // so it is offered as the way back only where it would leave a sale counted.
@@ -1004,10 +1003,20 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   const none = periodLots.length === 0 ? noPeriodSales
     : priceCuration.changed() && priceCuration.defaultIncluded(periodLots).length > 0 ? 'All sales are excluded. Reset to include them.'
       : 'No results are counted. Include one under Inspect sales.';
-  $('sale-strength').textContent = empty ? none : `${sales(count)}${years}`;
   const filters = filterLines(periodLots, priceCuration, { name, denomination: wanted, citing, uncited, unsearched, passes });
-  $('cited-count').textContent = filters.join(' · ');
-  $('cited-count').hidden = filters.length === 0;
+  // K-16: three counts in one breath under the median ("2 of 4 results cite RIC 306 · 5 matches on acsearch · 1 without a price") become one sentence:
+  // "Median of 2 sales citing RIC 306 (5 results, 1 unpriced)". The filters are folded into it while the median rests on exactly the rows they
+  // leave; where the collector's own decisions, an unread page or a search that looks for something else make it more than that, their lines
+  // stay beside it as before. Inspect sales and Copy summary keep the whole accounting.
+  const byHand = periodLots.some((sale) => (reason(sale) === null) !== (priceCuration.reasonFor(sale) === null));
+  // An empty median keeps its filter line: "0 of 2 results cite Price 23" is why nothing is counted.
+  const folded = !empty && !byHand && !uncited && !unsearched;
+  const which = folded ? [citing ? `citing ${name}` : '', wanted ? `naming “${wanted}”` : ''].filter(Boolean).join(' and ') : '';
+  // The years the sales span stay in the sentence: how old the median's sales are is part of how far to trust it.
+  const yearSpan = summary.earliest === null ? '' : `, ${summary.earliest === summary.latest ? summary.earliest : `${summary.earliest}–${summary.latest}`}`;
+  $('sale-strength').textContent = empty ? none : `Median of ${sales(count)}${which ? ` ${which}` : ''}${yearSpan}`;
+  $('cited-count').textContent = folded ? '' : filters.join(' · ');
+  $('cited-count').hidden = folded || filters.length === 0;
   const trend = trendOf(includedLots, currency, now);
   $('sale-trend').textContent = trend ? trendText(trend, money.format) : '';
   $('sale-trend').hidden = !trend;
@@ -1017,7 +1026,7 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
     // The name keeps the date it shows, so a screen reader or voice control still finds it.
     const link = lotLink(last, saleDay(last.date));
     link.setAttribute('aria-label', `Last sale ${saleDay(last.date)} on acsearch, opens a new tab`);
-    $('last-sale').replaceChildren(`last ${money.format(last.amount)} on `, link);
+    $('last-sale').replaceChildren(`last ${money.format(last.amount)}, `, link);
   }
   // What the panel was drawn from: the results themselves, before any filter left one out, so the "+" says how much acsearch held. The query is not
   // repeated here: it is shown beside Change search, where it can be edited.
@@ -1031,17 +1040,15 @@ function renderPrices(lots, currency, term, named = false, context = shownPrices
   // "+" only when acsearch may hold more of them: the page is full and no lot on it, listed newest first, is dated before the period starts. One that
   // is proves the page reaches back past the period, so every sale of the period is already on it.
   const reachesBack = lots.some((sale) => saleDate(sale.date) !== null && lotsInPeriod([sale], period.value, now).length === 0);
-  let drawn = `${total}${pageSummary.capped && !reachesBack ? '+' : ''} ${total === 1 ? 'match' : 'matches'} on acsearch`;
-  if (unpriced) drawn += ` · ${unpriced} without a price`;
-  if (future) drawn += ` · ${futureText(drawnFrom)}`;
-  if (skipped) drawn += ` · ${skipped} not counted`;
-  $('sale-period').textContent = drawn;
-  // A narrow panel may cut a stat line short, so each carries its whole text as a tooltip.
+  const drawn = [`${total}${pageSummary.capped && !reachesBack ? '+' : ''} ${total === 1 ? 'result' : 'results'}`, unpriced ? `${unpriced} unpriced` : '',
+    future ? futureText(drawnFrom) : '', skipped ? `${skipped} not counted` : ''].filter(Boolean).join(', ');
+  $('sale-period').textContent = `(${drawn})`;
+  // A narrow panel may cut a stat line short, so each carries its whole text as a tooltip, the years of the sales included.
   const whole = (...ids) => ids.filter((id) => !$(id).hidden).map((id) => $(id).textContent || [...$(id).children].map((part) => part.textContent ?? part).join('')).join(' · ');
   $('sale-period').hidden = false;
   $('price-note').hidden = false;
-  $('stat-sales').title = whole('sale-strength', 'last-sale');
-  $('stat-counts').title = whole('cited-count', 'sale-period');
+  $('stat-sales').title = [`${$('sale-strength').textContent} ${$('sale-period').textContent}`, whole('last-sale')].filter(Boolean).join(' · ');
+  $('stat-counts').title = whole('cited-count');
   $('curation-count').textContent = `${counts.included} included · ${counts.excluded} excluded`;
   $('reset-curation').disabled = !priceCuration.changed();
   $('range-amount').textContent = `${money.format(summary.lowerQuartile)}–${money.format(summary.upperQuartile)}`;

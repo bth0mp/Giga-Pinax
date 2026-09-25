@@ -186,6 +186,8 @@ select:focus-visible,input:focus-visible {border-color:var(--accent); outline-of
 .stat-meta {font-size:12px; line-height:1.45; margin-top:4px; font-variant-numeric:tabular-nums;}
 .stat-meta > :not([hidden]) ~ :not([hidden])::before {content:" · "; color:var(--muted); font-weight:400;}
 .stat-meta .sale-filtered,.stat-meta .sale-period {font-size:11px; color:var(--muted);}
+/* K-16: what the median was drawn from is the bracket of its own sentence, "Median of 2 sales citing RIC 306 (5 results, 1 unpriced)". */
+.stat-meta > .sale-period:not([hidden])::before {content:" ";}
 /* Both blocks keep the height they will have while acsearch answers, so its answer moves nothing under them. */
 .median-block {min-height:98px;}
 .prices-panel[data-state="loading"] .median-line strong,.prices-panel[data-state="loading"] .sale-strength {color:var(--muted); font-weight:400;}

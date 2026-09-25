@@ -46,7 +46,7 @@ function pricedAcsearchPage(scale = 1) {
 }
 
 // A Price 23 page as the re-review's probe wrote it: ten results, eight citing Price 23 (two of them drachms), one Philip II stater that cites
-// something else and one tetradrachm without a price - so the counts line carries a filter, the matches and "1 without a price".
+// something else and one tetradrachm without a price - so the median's sentence carries a filter, the results and "1 unpriced".
 function price23Page(scale = 1) {
   const lot = (id, date, price, description) => ({ id, title: `House ${id % 100}, Auction ${id % 7}, Lot ${id % 50}`, description,
     image: 'media/css/images/design/blank.gif', date, price: String(price), last: false });
@@ -257,7 +257,8 @@ test('the stat lines keep every count at 360 and 320, and one wrap moves nothing
           return { id, text: line.textContent, cut: line.scrollWidth > line.clientWidth, lines: Math.round(line.getBoundingClientRect().height / 17) };
         }));
         for (const line of lines) assert.equal(line.cut, false, `${label}: ${line.id} is cut: ${line.text}`);
-        assert.match(lines[1].text, /1 without a price/, label);
+        // Loop 6 (K-16): what the median was drawn from is the bracket of its own sentence.
+        assert.match(lines[0].text, /\(10 results, 1 unpriced\)/, label);
         const after = await frame();
         assert.equal(after.result, before.result, label);
         assert.equal(after.median, before.median, label);
