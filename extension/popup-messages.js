@@ -16,6 +16,16 @@ const SIGN_IN_MESSAGE = 'Hammer prices come from acsearch.info, which shows them
 const hiddenPricesMessage = (upcoming) => `Every price on this page is hidden (*). If you are signed out of acsearch, sign in and select “Get prices”${upcoming ? '; lots not yet sold are listed below' : ''}.`;
 // X-10: a card drawn while nomisma.org did not answer shows the names that came back and says the rest are missing, never their identifiers.
 const NAMES_UNAVAILABLE = 'names unavailable — nomisma.org didn’t answer';
+// X-04: a first edition's number is answered before any request, in words, since no catalogue here or online holds those numbers.
+/**
+ * @param {{ number: string, book: string }} citation
+ * @param {boolean} searched
+ * @returns {string}
+ */
+const firstEditionMessage = ({ number, book }, searched) => `${book || 'RIC'} ${number} is cited from the first edition${book ? ` of ${book}` : ''}. `
+  + (book ? 'The catalogue here and OCRE use the second edition, whose numbers differ, so no type is opened.'
+    : 'The catalogue here and OCRE hold RIC I, II.1 and II.3 in their second edition only, whose numbers differ, so no type is opened.')
+  + (searched ? ' Auction results are searched by the number as written.' : ` ${BARE_RIC_HINT}`);
 const ACCESS_HINT = 'Select “Get prices” to let Giga Pinax fetch acsearch prices.';
 const EMPTY_TERM_MESSAGE = 'Enter a search term for acsearch, such as “Nero 306”.';
 const ACSEARCH_HOME = 'https://www.acsearch.info/';
@@ -45,14 +55,23 @@ const onlineMessage = (corpus) => `This type was not available in the local ${ca
   + 'Check online to search numismatics.org.';
 
 // A bare RIC number starts no auction search of its own (namesOneType), so where there is none below, the message says what would start one.
+// X-04: where the bundle had already answered that it does not hold the reference (bundled names the book it checked), the failed request is only
+// the further look online, and the message says so first: the connection is not the reason there is no card.
 /**
  * @param {{ status: string, httpStatus?: number }} outcome
  * @param {boolean} hasFallback
  * @param {boolean} [bareRic]
+ * @param {string} [bundled]
  * @returns {string}
  */
-function catalogueFailureMessage(outcome, hasFallback, bareRic = false) {
+function catalogueFailureMessage(outcome, hasFallback, bareRic = false, bundled = '') {
   const searches = hasFallback ? ' You can still search auction results below.' : bareRic ? ` ${BARE_RIC_HINT}` : '';
+  if (bundled) {
+    const further = outcome.status === 'unavailable' ? `numismatics.org is temporarily unavailable (HTTP ${outcome.httpStatus}), so nothing further was checked.`
+      : outcome.status === 'rate-limited' ? `numismatics.org is temporarily limiting requests (HTTP ${outcome.httpStatus}), so nothing further was checked.`
+        : 'numismatics.org couldn’t be reached to look further.';
+    return `Not in the bundled ${bundled} (checked offline). ${further}${searches}`;
+  }
   if (outcome.status === 'unavailable') return `numismatics.org is temporarily unavailable (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
   if (outcome.status === 'rate-limited') return `numismatics.org is temporarily limiting requests (HTTP ${outcome.httpStatus}). Try the catalogue lookup again later.${searches}`;
   return hasFallback ? CONNECTION_MESSAGE : `${CONNECTION_ONLY_MESSAGE}${searches}`;
@@ -79,5 +98,5 @@ export {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
-  NAMES_UNAVAILABLE, WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, hiddenPricesMessage, onlineMessage, rulerMessage,
+  NAMES_UNAVAILABLE, WEB_ADDRESS_MESSAGE, catalogueFailureMessage, firstEditionMessage, coinArchivesFailure, hiddenPricesMessage, onlineMessage, rulerMessage,
 };

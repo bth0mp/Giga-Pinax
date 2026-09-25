@@ -129,6 +129,8 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     | `Philip I, 244-249. Antoninianus, Rome. RIC 27b. 4.23 g.` pasted as lot text | one reference, `RIC 27b` read under the heading's ruler, opening **RIC IV Philip I 27B** |
     | `Crawford 44/5` | the **RRC 44/5** card |
     | `SC 1266.2` | the **Seleucid Coins (part 1) 1266.2** card |
+    | `RIC I 306 (1st ed.)` | no card, and no request: "RIC I 306 is cited from the first edition of RIC I…", not a connection failure |
+    | `RIC I² Nero 9999` | "Not in the bundled RIC I² (checked offline). numismatics.org couldn’t be reached to look further." |
 
     *Expected:* every one of them answers with the network off, and each card names its authority, denomination, mint,
     material and portrait in English rather than showing identifiers. Prices, which need the network, stay unavailable.

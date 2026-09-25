@@ -1852,3 +1852,12 @@ test('a page whose every price is a star is marked hidden, and no other unpriced
   assert.equal(mixed.status, 'unpriced');
   assert.equal(Object.hasOwn(mixed, 'hidden'), false);
 });
+
+// Loop 6 (X-04): the search term drops an edition remark kept on a RIC number: "Nero 1st ed. \"RIC 306\"" is no phrase a dealer writes.
+test('a RIC term leaves an edition remark out, and keeps a denomination word', () => {
+  const nero = { catalogue: 'RIC', volume: '', section: '', rulers: ['Nero'] };
+  assert.equal(defaultTerm({ ...nero, number: '306 (1st ed.)' }), defaultTerm({ ...nero, number: '306' }));
+  assert.equal(defaultTerm({ ...nero, number: '306 (1. Aufl.)' }), defaultTerm({ ...nero, number: '306' }));
+  assert.doesNotMatch(defaultTerm({ catalogue: 'RIC', volume: 'I', section: '', number: '306 (1st ed.)' }), /ed\./);
+  assert.match(defaultTerm({ catalogue: 'RIC', volume: 'II', section: 'Trajan', number: '253 (aureus)' }), /aureus/);
+});

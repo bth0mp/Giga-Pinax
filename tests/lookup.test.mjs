@@ -1828,3 +1828,25 @@ test('a card never prints an identifier nomisma.org did not answer for, and a re
     : { ok: false, status: 404, text: async () => '' }), unreachable }), { nero: 'Nero' });
   assert.deepEqual(unreachable, []);
 });
+
+// Loop 6 (X-04): a first edition's number is answered before any request, since neither the bundle nor OCRE holds RIC I, II.1 or II.3 in that edition;
+// a failure after the bundle said "none" carries that answer with it.
+test('a first-edition RIC citation is answered before any request, and a failed look online keeps what the bundle said', async () => {
+  const { firstEditionCitation } = await import('../extension/lookup.js');
+  const read = (text, extra = {}) => firstEditionCitation({ ...parseReference(text), ...extra });
+  assert.deepEqual(read('RIC I 306 (1st ed.)'), { number: '306', volume: 'I (2nd edition)', book: 'RIC I' });
+  assert.deepEqual(read('RIC 306 (1. Aufl.)', { rulers: ['Nero'] }), { number: '306', volume: 'I (2nd edition)', book: 'RIC I' });
+  assert.deepEqual(read('RIC II.3 2140 (1st ed.)'), { number: '2140', volume: 'II, Part 3 (2nd edition)', book: 'RIC II.3' });
+  assert.deepEqual(read('RIC 306 (1st ed.)'), { number: '306', volume: '', book: '' });
+  // Not a first edition's number the bundle cannot hold: the second edition, a volume held in its 1926 book too, a volume with one edition only,
+  // no mark at all, another catalogue.
+  for (const text of ['RIC I 306 (2nd ed.)', 'RIC II 306 (1st ed.)', 'RIC IV 306 (1st ed.)', 'RIC I 306', 'Price 23 (1st ed.)']) assert.equal(read(text), null, text);
+  const refused = async () => { throw new Error('no request may be made'); };
+  const result = await lookupType(parseReference('RIC I 306 (1st ed.)'), { fetchImpl: refused });
+  assert.equal(result.status, 'first-edition');
+  assert.equal(result.book, 'RIC I');
+
+  const none = { lookupType: async () => ({ status: 'none' }) };
+  const offline = await lookupType(parseReference('RIC I² Nero 9999'), { localProvider: none, fetchImpl: async () => { throw new TypeError('offline'); } });
+  assert.deepEqual(offline, { status: 'network', localStatus: 'none' });
+});

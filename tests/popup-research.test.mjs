@@ -3129,3 +3129,21 @@ test('a card with names nomisma.org did not answer for says so, and Retry fills 
   await settle();
   assert.equal(summary.children.join(''), 'Euthydemus I · Tetradrachm · Silver · 230–190 BC');
 });
+
+// Loop 6 (X-04): offline, a first-edition citation and a number the bundled volume lacks were both called a connection failure.
+test('a first-edition citation and a number the bundle lacks are not called a connection failure', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+    lookupTypeImpl: async (reference) => (reference.number.includes('1st') ? { status: 'first-edition', corpus: 'ocre', query: '', number: '306', volume: 'I (2nd edition)', book: 'RIC I' }
+      : { status: 'network', localStatus: 'none' }) });
+  popup.element('quick-reference').value = 'RIC I 306 (1st ed.)';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('form-error').textContent, 'RIC I 306 is cited from the first edition of RIC I. The catalogue here and OCRE use the second edition, whose numbers differ, so no type is opened. Auction results are searched by the number as written.');
+  assert.equal(popup.element('research-prices').hidden, false);
+  popup.element('quick-reference').value = 'RIC I² Nero 9999';
+  await popup.element('quick-reference').emit('input');
+  popup.element('quick-reference').value = 'RIC I² Nero 9999';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('form-error').textContent, 'Not in the bundled RIC I² (checked offline). numismatics.org couldn’t be reached to look further. You can still search auction results below.');
+});

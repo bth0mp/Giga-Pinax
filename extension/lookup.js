@@ -1,6 +1,6 @@
 import { squash } from './core/validate.js';
 import { recordFetchFailure } from './core/diagnostics.js';
-import { CATALOGUES, canonicalRicPerson, catalogueOf, isMintOnly, isRicPerson, isSectionOnly, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumesOf } from './catalogues.js';
+import { CATALOGUES, canonicalRicPerson, catalogueOf, isMintOnly, isRicPerson, isSectionOnly, RIC_SECTIONS, RIC_VOLUMES, ricMintSection, ricPeople, rulerKey, volumeFor, volumesOf } from './catalogues.js';
 
 // The clean-up a lot row and a typed reference share, so both read the same text the same way. It lives here because lot.js is built on this module.
 // Remarks a dealer adds that no search wants, rarity ("(R2)", "(RRR)", "(Very scarce)") and equivalence ("(= BMC 319)") too: no OCRE number ends in
@@ -890,6 +890,23 @@ function heldEdition(volume) {
   });
   return held.length === 1 && /\(2nd edition\)$/.test(held[0].value) ? held[0].value : '';
 }
+// X-04: a first-edition mark a RIC citation keeps on its number ("RIC I 306 (1st ed.)", "RIC 306 (1. Aufl.)", "(1re éd.)"): withEdition carries only a
+// second-edition mark onto the volume. On a volume OCRE and the bundle hold in their second edition alone (RIC I, II.1 and II.3) no lookup can answer
+// it: those numbers are the 1923 and 1926 books', not the ones held. The volume is the one written, else the one its ruler implies; with neither, it
+// is any of the three. A volume held in another edition too ("RIC II", whose 1926 book is held) is left to the lookup, as is anything unmarked.
+export const FIRST_EDITION = /\s*\((?:1st|first)\s+ed(?:ition|s)?\.?\)$|\s*\(1\.\s*Aufl(?:\.|age)?\)$|\s*\(1(?:re|ère|er)\s+[ée]d\.?\)$/i;
+export function firstEditionCitation(reference) {
+  if (reference?.catalogue !== 'RIC' || !FIRST_EDITION.test(String(reference.number ?? ''))) return null;
+  const number = String(reference.number).replace(FIRST_EDITION, '').trim();
+  const typed = unquote(reference.volume);
+  const person = unquote(reference.section) || (Array.isArray(reference.rulers) && reference.rulers.length === 1 ? reference.rulers[0] : '');
+  const implied = !typed && person ? volumeFor(person, '') : '';
+  const volume = typed ? heldEdition(typed) : /\(2nd edition\)$/.test(implied) ? implied : '';
+  if (typed && !volume) return null;
+  const [numeral, part] = shelf(volume);
+  return { number, volume, book: volume ? `RIC ${numeral.toUpperCase()}${part ? `.${part}` : ''}` : '' };
+}
+
 export function soleEdition(volume, title) {
   const held = heldEdition(volume);
   return Boolean(held) && norm(parseReference(title, false)?.volume ?? '') === norm(held);
@@ -1004,6 +1021,9 @@ export async function eitherReading(reference, look) {
 }
 
 export function lookupType(given, options = {}) {
+  // Answered before any request: no catalogue here or online holds a first edition's numbers.
+  const first = firstEditionCitation(given);
+  if (first) return Promise.resolve({ status: 'first-edition', corpus: 'ocre', query: buildQuery(given).query, ...first });
   return eitherReading(given, (reference) => lookupOneType(reference, options));
 }
 
@@ -1099,7 +1119,8 @@ async function lookupOneType(given, options = {}) {
     return found;
   } catch (error) {
     void recordFetchFailure('lookup', error);
-    return failureOutcome(error);
+    // X-04: what the bundle said before the request failed goes with the failure: "not in the bundle" is an answer the connection did not change.
+    return local ? { ...failureOutcome(error), localStatus: local.status } : failureOutcome(error);
   } finally {
     timer.done();
   }

@@ -180,9 +180,13 @@ export function searchCategory(reference) {
 // number's own parenthetical ("266 (aureus)") is the word OCRE tells two types apart by and stays as a plain word too: acsearch finds nothing for a
 // phrase holding a bracket. The number itself must sit next to a RIC key, so the volume numeral goes inside the phrases, without the edition mark
 // dealers leave out ("RIC I²" is cited "RIC I"); with no volume there is only one phrase to offer.
+// X-04: an edition remark kept on a RIC number ("306 (1st ed.)", "(1. Aufl.)") is a note on the book, which no dealer writes into his lot title: it is
+// no word of the search.
+const EDITION_ASIDE = /^(?:\d+(?:st|nd|rd|th)\s+eds?\.?|(?:first|second)\s+edition|\d\.\s*Aufl(?:\.|age)?|\d(?:re|ère|er|e|ème)\s+[ée]d\.?)$/i;
 function ricTerm({ number, section, volume, rulers }) {
   const people = Array.isArray(rulers) && rulers.length === 1 ? canonicalRicPerson(rulers[0]) : '';
-  const [, digits = '', aside = ''] = /^(\S*)(?:\s*\(([^)]*)\))?$/.exec(squash(number)) ?? [];
+  const [, digits = '', remark = ''] = /^(\S*)(?:\s*\(([^)]*)\))?$/.exec(squash(number)) ?? [];
+  const aside = EDITION_ASIDE.test(squash(remark)) ? '' : remark;
   const numeral = /^[IVX]+/.exec(squash(volume))?.[0] ?? '';
   const keyed = digits ? group([phrase('RIC', digits), ...(numeral ? [phrase('RIC', numeral, digits), phrase(`RIC ${numeral},`, digits)] : [])]) : 'RIC';
   return squash(`${squash(section).replace(/\s*\([^)]*\)$/, '') || people} ${aside} ${keyed}`);

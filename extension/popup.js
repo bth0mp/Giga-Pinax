@@ -14,7 +14,7 @@ import {
   ACCESS_HINT, ACSEARCH_HOME, ACSEARCH_NETWORK_MESSAGE, ACSEARCH_PERMISSION_MESSAGE, ACSEARCH_TOO_LARGE_MESSAGE, CHECK_MESSAGE,
   COINARCHIVES_HOME, COINARCHIVES_ORIGIN, COPY_FAILED_MESSAGE, EMPTY_OTHER_MESSAGE, EMPTY_QUICK_MESSAGE, EMPTY_TERM_MESSAGE, EXAMPLE_REFERENCES,
   NO_CATALOGUE_MESSAGE, NO_REFERENCES_MESSAGE, OTHER_SUMMARY, PERMISSION_MESSAGE, PRICES_WAIT_MESSAGE, QUICK_ERROR, SIGN_IN_MESSAGE, SPELLINGS_HINT,
-  NAMES_UNAVAILABLE, WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, hiddenPricesMessage, onlineMessage, rulerMessage,
+  NAMES_UNAVAILABLE, WEB_ADDRESS_MESSAGE, catalogueFailureMessage, coinArchivesFailure, firstEditionMessage, hiddenPricesMessage, onlineMessage, rulerMessage,
 } from './popup-messages.js';
 import { candidateGroups, coinArchivesCounts, filterLines, folded, lotLink, lotTitle, lotUrl, rangePercent, renderYears, sales, specimenItem, spokenFilters } from './popup-drawing.js';
 import { $, applyStoredTheme, chooseTheme, clearRicNote, darkScheme, markScroll, placeAtTop, revealAgain, ricChanged, shownTheme, syncThemeButton } from './popup-shell.js';
@@ -1362,13 +1362,26 @@ async function run(perform, note = '', failedReference = null) {
     showError(`${outcome.query} matches too many types to list. Type a ruler to narrow it down.`);
   }
   else if (outcome.status === 'none') showError(`No ${outcome.query} found in ${catalogueForCorpus(outcome.corpus)?.corpusName}. ${catalogueForCorpus(outcome.corpus)?.notFoundHint}`, 'reference-number');
+  // X-04: a first edition's number, answered before any request; the prices, where they run, search it as written.
+  else if (outcome.status === 'first-edition') showError(firstEditionMessage(outcome, Boolean(researchContext)));
   else {
     if (revision !== referenceRevision) return;
     const hasFallback = Boolean(researchContext && failedReference);
-    showError(catalogueFailureMessage(outcome, hasFallback, Boolean(failedReference) && !namesOneType(failedReference)));
+    const bundled = outcome.localStatus === 'none' && failedReference ? bundledName(failedReference) : '';
+    showError(catalogueFailureMessage(outcome, hasFallback, Boolean(failedReference) && !namesOneType(failedReference), bundled));
   }
   // A lookup that failed is answered by its error, under the box it was typed in: that is what comes into view, never the prices below it.
   if (!$('form-error').hidden) revealAgain('form-error');
+}
+
+// The book the bundle checked, as a failure names it (X-04): the RIC volume as a collector writes it ("RIC I²"), else the corpus's catalogue.
+function bundledName(reference) {
+  if (reference.catalogue === 'RIC') {
+    const label = RIC_VOLUMES.find(({ value }) => value === reference.volume)?.label;
+    return label ? `RIC ${label.replace(/ \(2nd ed\.\)$/, '')}` : 'OCRE catalogue';
+  }
+  const name = catalogueOf(reference.catalogue)?.corpusName;
+  return name ? `${name} catalogue` : 'catalogue';
 }
 
 async function runPrices(term, currency, { remember = true, context = researchContext, keepCuration = false } = {}) {
