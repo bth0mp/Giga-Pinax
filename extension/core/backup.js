@@ -4,6 +4,9 @@ import {
   quarantineEntryId, unusableRevisions, validateQuarantinedRecord, validateSnapshot,
 } from './records.js';
 import { sameEventKey } from './evidence.js';
+
+// How much of the bound a store takes, as Settings says it (K-13).
+export { megabytesText } from './records.js';
 import { findDuplicateLot } from './lot-context.js';
 import { clone, failure, isRecursionError, own, tooDeeplyNested } from './validate.js';
 /**

@@ -3000,3 +3000,15 @@ test('X-03: a set-aside record can be removed for good, and only the one named',
   assert.equal((await writer.commitCommand(command('quarantine.remove', { entryId: quarantineEntryId(stored.quarantine[1]) }))).ok, true);
   assert.equal(storage.read().quarantine, undefined);
 });
+
+// K-13: Settings asks how full the store is, measured as every write is judged, without a snapshot read paying for it.
+test('K-13: storage.usage answers the bytes a write is judged by, and writes nothing', async () => {
+  const full = storeAtTheBound();
+  const storage = memoryStorage(full);
+  const reply = await createCommandWriter(storage, context()).commitCommand(command('storage.usage'));
+  assert.equal(reply.ok, true);
+  assert.deepEqual(reply.value, { bytes: storedBytes(full) + LIMITS.commandReplyBytes, limit: MAX_ROOT_BYTES });
+  assert.deepEqual(storage.read(), full);
+  const unreadable = await createCommandWriter(memoryStorage('damaged'), context()).commitCommand(command('storage.usage'));
+  assert.equal(unreadable.reason, 'unreadable');
+});

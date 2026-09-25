@@ -11,3 +11,8 @@ main :is(summary,button,input,select,textarea,a){scroll-margin-bottom:84px}
 .set-aside-fix{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin:6px 0 0}
 .set-aside-fix label{margin:0}
 .set-aside-fix input{min-width:220px}
+/* K-13/X-09: how full the store is, as one line and a thin meter; the warning is the review notice. */
+.storage-gauge{margin:0 0 12px}
+.storage-gauge p{margin:0 0 4px}
+#storage-meter{display:block;width:100%;max-width:360px;height:8px}
+.storage-warning{color:var(--warning);font-size:var(--text-body)}

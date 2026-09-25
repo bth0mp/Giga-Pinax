@@ -1,5 +1,5 @@
 import {
-  MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText,
+  MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines, importCountsText, megabytesText,
   importIssueLines, importWithSafetyCopy, previewImport, previewReplaceOverUnreadable, quarantineDocument, quarantineRestoreText,
   quarantineRows, quarantineSummaryText, rawExportDocument, validateBackup,
 } from './core/backup.js';
@@ -363,6 +363,29 @@ function formState({ theme = $('theme').value, specimenPhotos = $('specimen-phot
 const sameSettings = (a, b) => Boolean(a && b) && a.currency === b.currency && (a.importVatBps ?? null) === (b.importVatBps ?? null) &&
   JSON.stringify(a.housePremiumPresets ?? []) === JSON.stringify(b.housePremiumPresets ?? []);
 
+// How full the store is (K-13, X-09): "1.6 MB of 5 MB used" over a thin meter, and from 80% the way to make room.
+const STORAGE_WARN_SHARE = 0.8;
+async function refreshStorageUsage() {
+  let reply = null;
+  try { reply = await bridge.sendCommand({ type: 'storage.usage', requestId: bridge.newRequestId() }); } catch { /* the gauge stays hidden */ }
+  const { bytes, limit } = reply?.ok && reply.value ? reply.value : {};
+  if (!Number.isFinite(bytes) || !Number.isFinite(limit) || limit <= 0) {
+    $('storage-gauge').hidden = true;
+    return;
+  }
+  $('storage-gauge').hidden = false;
+  $('storage-used').textContent = `${megabytesText(bytes)} of 5 MB used`;
+  const meter = $('storage-meter');
+  meter.setAttribute('max', String(limit));
+  meter.setAttribute('high', String(Math.round(limit * STORAGE_WARN_SHARE)));
+  meter.setAttribute('value', String(Math.min(bytes, limit)));
+  const warning = $('storage-warning');
+  warning.hidden = bytes < limit * STORAGE_WARN_SHARE;
+  warning.textContent = bytes > limit
+    ? 'Your records fill the 5 MB Giga Pinax can keep in this browser: only changes that make them smaller can be saved. Export a backup, then remove old coins or comparables you no longer need.'
+    : 'Your records are filling the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or comparables you no longer need.';
+}
+
 // Data health read again on its own. The revision the page saves against follows the store only
 // while the store still holds the settings this page drew: presets another view saved since are not
 // overwritten by a page that never showed them, and that save is refused as a conflict instead.
@@ -370,6 +393,7 @@ async function refreshDataHealth() {
   const latest = await bridge.getSnapshot();
   if (!latest?.ok) throw new Error(latest?.message || 'Could not read local records.');
   renderDataHealth(latest.value.quarantine);
+  void refreshStorageUsage();
   if (sameSettings(latest.value.preferences, preferencesSnapshot?.preferences)) {
     preferencesSnapshot.preferences = latest.value.preferences;
   }
@@ -439,6 +463,7 @@ async function load() {
   cacheDefaultCurrency(siteStorage(), preferencesSnapshot.preferences.currency);
   render();
   renderDataHealth(preferencesSnapshot.quarantine);
+  void refreshStorageUsage();
   // Drawing the saved rows replaces the list, so the editors wait for it (the markup starts them disabled): a house
   // added before the worker answered would otherwise be wiped by this render.
   for (const id of ['save-settings', 'currency', 'import-vat', 'add-premium', 'copy-presets', 'paste-presets']) $(id).disabled = false;
@@ -754,6 +779,9 @@ $('import-form').addEventListener('submit', async (event) => {
   const generation = previewGeneration;
   const file = $('import-file').files?.[0];
   if (!file) return status('Choose a backup file.', true);
+  // A large backup takes a second or more to read and compare, so the button says it is working (K-13).
+  $('preview-import').textContent = 'Reading…';
+  $('preview-import').disabled = true;
   try {
     // Reading a file far larger than any backup into memory is what the bound is there to prevent.
     if (file.size > MAX_BACKUP_BYTES) throw new Error('Backup exceeds the 16 MiB limit.');
@@ -805,6 +833,9 @@ $('import-form').addEventListener('submit', async (event) => {
       clearPreview();
       status(error.message || 'Could not preview the backup.', true);
     }
+  } finally {
+    $('preview-import').textContent = 'Preview import';
+    $('preview-import').disabled = false;
   }
 });
 
@@ -815,6 +846,7 @@ $('confirm-import').addEventListener('click', async () => {
   // Disabled before anything is downloaded or sent, so a second click cannot issue a second copy
   // and a second command.
   $('confirm-import').disabled = true;
+  $('confirm-import').textContent = 'Importing…';
   // A merge that replaces even one record overwrites a body this install never saw, so it earns
   // the same copy on disk as a replace does.
   const overwrites = pending.mode === 'replace' || pending.preview.counts.updated > 0;
@@ -860,6 +892,8 @@ $('confirm-import').addEventListener('click', async () => {
   } catch (error) {
     clearPreview();
     status(`${copied}${error.message || 'Could not import the backup. Preview it again.'}`, true);
+  } finally {
+    $('confirm-import').textContent = 'Confirm import';
   }
 });
 

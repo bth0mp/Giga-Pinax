@@ -74,6 +74,8 @@ function loadSettings({
   clipboard: givenClipboard = null,
   getSelf = null,
   hash = '',
+  // What the store answers the gauge's storage.usage with (K-13); that read is kept out of `commands`, which list writes.
+  usage = { ok: false },
 } = {}) {
   const copied = [];
   const closedTabs = [];
@@ -96,6 +98,7 @@ function loadSettings({
     newRequestId: () => `request-${(requestIds += 1)}`,
     getSnapshot: async () => state.snapshot,
     sendCommand: async (command) => {
+      if (command.type === 'storage.usage') return typeof usage === 'function' ? usage() : usage;
       // Copied out of the sandbox realm, so a test can compare it with objects of its own.
       commands.push(structuredClone(command));
       return reply(command, state);
@@ -1711,4 +1714,44 @@ test('X-03: Remove asks first, names the coin, and takes it out of the list', as
 test('X-03: Settings opened for the set-aside records from the workspace keeps its way back', async () => {
   const page = await openSettings({ hash: '#from-workspace%3Fdata-health' });
   assert.equal(page.element('settings-return').textContent, 'Return to workspace');
+});
+
+// --- K-13 / X-09: how full the store is --------------------------------------------------------------
+
+const MiB = 1024 * 1024;
+test('K-13: Settings shows how much of the 5 MB the records use, and warns from 80%', async () => {
+  const quiet = await openSettings({ usage: { ok: true, value: { bytes: Math.round(1.6 * MiB), limit: 5 * MiB } } });
+  assert.equal(quiet.element('storage-gauge').hidden, false);
+  assert.equal(quiet.element('storage-used').textContent, '1.6 MB of 5 MB used');
+  assert.equal(quiet.element('storage-meter').getAttribute('value'), String(Math.round(1.6 * MiB)));
+  assert.equal(quiet.element('storage-meter').getAttribute('high'), String(4 * MiB));
+  assert.equal(quiet.element('storage-warning').hidden, true);
+
+  const filling = await openSettings({ usage: { ok: true, value: { bytes: Math.round(4.1 * MiB), limit: 5 * MiB } } });
+  assert.equal(filling.element('storage-used').textContent, '4.1 MB of 5 MB used');
+  assert.equal(filling.element('storage-warning').hidden, false);
+  assert.equal(filling.element('storage-warning').textContent, 'Your records are filling the 5 MB Giga Pinax can keep in this browser. Export a backup, then remove old coins or comparables you no longer need.');
+
+  const full = await openSettings({ usage: { ok: true, value: { bytes: 5 * MiB + 2000, limit: 5 * MiB } } });
+  assert.equal(full.element('storage-used').textContent, '5.01 MB of 5 MB used');
+  assert.match(full.element('storage-warning').textContent, /^Your records fill the 5 MB .* only changes that make them smaller can be saved\./);
+
+  const unknown = await openSettings();
+  assert.equal(unknown.element('storage-gauge').hidden, true, 'no figure is shown that the store did not give');
+});
+
+test('K-13: Preview and Confirm say they are working while a large backup is read and imported', async () => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const current = snapshotWith({ lots: [lot(uuid(1))] });
+  const page = await openSettings({ snapshot: current, reply: async () => { await held; return { ok: true }; } });
+  await preview(page, backupDocument(snapshotWith({ lots: [lot(uuid(1)), lot(uuid(2))] })));
+  assert.equal(page.element('preview-import').textContent, 'Preview import', 'back to its name once read');
+  const confirming = page.element('confirm-import').click();
+  await settle();
+  assert.equal(page.element('confirm-import').textContent, 'Importing…');
+  release();
+  await confirming;
+  await settle();
+  assert.equal(page.element('confirm-import').textContent, 'Confirm import');
 });

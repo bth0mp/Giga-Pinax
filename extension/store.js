@@ -1,7 +1,7 @@
 // @ts-check
 import {
   ENTRY_EDITABLE_FIELDS, LIMITS, MAX_ROOT_BYTES, SCHEMA_VERSION, boundVerdict, createEmptySnapshot, foldQuarantine, followOutcome,
-  healCollectionEntries, megabytesText, migrateSnapshot, quarantineEntryId,
+  healCollectionEntries, megabytesText, migrateSnapshot, quarantineEntryId, storedBytes,
   quarantineInvalidRecords, restartUnusableRevisions, setOutcome, validateDraftPayload,
   validateEventLocalTimes, validateSnapshot, validateWant,
 } from './core/records.js';
@@ -40,7 +40,7 @@ export const STORAGE_KEY = 'auctionCompanion:v1';
 export { MAX_ROOT_BYTES };
 // The commands the background worker answers from an extension page; any other message gets no reply.
 export const COMMAND_TYPES = new Set([
-  'snapshot.get', 'snapshot.raw',
+  'snapshot.get', 'snapshot.raw', 'storage.usage',
   'preferences.migrateIfAbsent', 'preferences.save',
   'lot.save', 'lot.delete', 'lot.restore',
   'group.save', 'group.delete', 'group.reorder',
@@ -1119,6 +1119,14 @@ export function createCommandWriter(storageArea, context) {
 
     if (command.type === 'snapshot.get') {
       return { ok: true, requestId: command.requestId, revision: stored.revision, value: stored };
+    }
+    // How full the store is, measured as every write is judged: the root with its reminders reserved, and the headroom a
+    // save leaves the background's own writes (K-13, X-09). Asked for by Settings alone, so no snapshot read pays for it.
+    if (command.type === 'storage.usage') {
+      return {
+        ok: true, requestId: command.requestId, revision: stored.revision,
+        value: { bytes: storedBytes(stored) + LIMITS.commandReplyBytes, limit: MAX_ROOT_BYTES },
+      };
     }
     const prior = stored.recentCommands.find(({ requestId }) => requestId === command.requestId);
     if (prior) return prior.reply;
