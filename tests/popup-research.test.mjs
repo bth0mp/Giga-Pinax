@@ -576,8 +576,37 @@ test('RIC local hit neither requests nor waits for ANS permission', async () => 
   await settle();
   assert.equal(requested, 0);
   assert.equal(remote, 0);
-  assert.equal(popup.element('result-reference').textContent, card.label);
-  assert.equal(popup.element('result-source').textContent, 'Local OCRE catalogue');
+  // Loop 3 (G-08): the heading writes the short canonical form; the long edition name stays in the source line.
+  assert.equal(popup.element('result-reference').textContent, 'RIC I² Nero 306');
+  assert.equal(popup.element('result-source').textContent, 'Local OCRE catalogue · RIC I, second edition');
+});
+
+// Loop 3 (G-08): one reference in one spelling everywhere the popup writes it - the card, the Recent chip and the coin a save would make - and the
+// coin's name is the card's summary line (without the metal), never the reference again.
+test('the card, its Recent chip and its watchlist coin write the reference one way, and name the coin by its summary', async () => {
+  const card = { id: 'ric.1(2).ner.306', corpus: 'ocre', label: 'RIC I (second edition) Nero 306', source: 'local', authority: 'Nero', denomination: 'As', mint: 'Rome', material: 'Bronze', portrait: null, dates: 'AD 62–68', obverse: { legend: 'NERO', description: 'Head' }, reverse: { legend: null, description: 'Temple' } };
+  const popup = await loadPopup({
+    permissionRequest: async () => true, permissionContains: async () => false,
+    priceFetch: async () => ({ status: 'empty', term: 'Nero 306' }),
+    localProvider: { serves: (corpus) => corpus === 'ocre', lookupType: async () => ({ status: 'ok', card }), lookupById: async () => ({ status: 'ok', card }) },
+  });
+  popup.element('quick-reference').value = 'RIC I² Nero 306';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(popup.element('result-reference').textContent, 'RIC I² Nero 306');
+  const chip = popup.element('recent-list').children[0].children[0];
+  assert.equal(chip.textContent, 'RIC I² Nero 306');
+  const saved = popup.dispatched.filter(({ type }) => type === 'giga-pinax-card').at(-1).detail;
+  assert.equal(saved.reference, 'RIC I² Nero 306');
+  assert.equal(saved.title, 'Nero · As · Rome · AD 62–68');
+  // Other editions and catalogues keep their own short forms.
+  assert.equal(companion.displayReference('RIC II, Part 3 (second edition) Hadrian 12'), 'RIC II.3² Hadrian 12');
+  assert.equal(companion.displayReference('RIC II, Part 1 (second edition) Titus 5'), 'RIC II.1² Titus 5');
+  assert.equal(companion.displayReference('RIC III Antoninus Pius 1000'), 'RIC III Antoninus Pius 1000');
+  assert.equal(companion.displayReference('RRC 44/5'), 'RRC 44/5');
+  assert.equal(companion.displayReference('Price 23'), 'Price 23');
+  // The short form reads back as the same reference.
+  assert.deepEqual(lookup.parseReference('RIC II.3² Hadrian 12'), lookup.parseReference('RIC II, Part 3 (second edition) Hadrian 12'));
 });
 
 test('RIC local miss offers an explicit online permission button', async () => {
@@ -1930,7 +1959,7 @@ test('a slow specimen query never delays the card, and a late answer for a card 
     lookupTypeImpl: async () => ((lookups += 1) === 1 ? { status: 'ok', card: { ...neroCard } } : { status: 'none', corpus: 'ocre', query: 'RIC 1' }) });
   assert.equal(asked.length, 1);
   assert.equal(popup.element('result').hidden, false, 'the card is on screen while the query waits');
-  assert.equal(popup.element('result-reference').textContent, neroCard.label);
+  assert.equal(popup.element('result-reference').textContent, 'RIC I² Nero 306');
   assert.equal(popup.element('specimens').hidden, true);
   assert.equal(signals[0]?.aborted, false, 'the query carries a signal of its own');
   // The collector looks up something else before Nomisma answers, and that lookup finds nothing.

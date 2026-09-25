@@ -4,7 +4,7 @@ import { DEFAULT_NUMBER, DEFAULT_SECTION, STORAGE_KEY, THEME_KEY, recallStep, re
 import { BIGR_KINGS, CORPORA, RIC_RULERS, RIC_VOLUMES, VOLUME_OPTIONS, catalogueForCorpus, catalogueOf, isMintOnly, ricMintSection, sectionMismatch, selectOptions, volumeFor } from './catalogues.js';
 import { LOOKUP_LAUNCH_MESSAGE, LOOKUP_MESSAGE, cardFromSearch, cardUrlFor, lookupLaunchSucceeded, queryFromSearch, selectionQuery } from './selection.js';
 import { findReferences, isLot, lotLabel, lotLookup, oneLine } from './lot.js';
-import { documentMode, shouldRevealRefine } from './companion-popup.js';
+import { cardName, displayReference, documentMode, editionName, shouldRevealRefine } from './companion-popup.js';
 import { fetchCoinArchivesPrices } from './coinarchives-prices.js';
 import { createLocalCatalogue } from './local-catalogue.js';
 import { PENDING_KEY, api, forgetPendingReference, hasAcsearchAccess, hasHostAccess, requestHostAccess, sessionArea } from './popup-access.js';
@@ -388,10 +388,12 @@ const announcement = (card, ...rest) => [`Found ${card.label}.`, filingNote(card
 function renderCard(card) {
   // A reference without type data has no type page and no sides to show, only its prices.
   const other = card.corpus === 'other';
-  $('result-reference').textContent = card.label;
+  // The heading writes the reference as it is typed ("RIC I² Nero 306"); the edition it abbreviates is said in the source line.
+  $('result-reference').textContent = displayReference(card.label);
   // The card names the catalogue it came out of, so a collector reading "Local PELLA catalogue" knows which bundle answered.
-  $('result-source').textContent = card.source === 'local' ? `Local ${catalogueForCorpus(card.corpus).corpusName} catalogue` : '';
-  $('result-source').hidden = card.source !== 'local';
+  const source = [card.source === 'local' ? `Local ${catalogueForCorpus(card.corpus).corpusName} catalogue` : '', editionName(card.label)].filter(Boolean).join(' · ');
+  $('result-source').textContent = source;
+  $('result-source').hidden = !source;
   $('result-summary').textContent = other ? OTHER_SUMMARY : [card.authority, card.denomination, card.mint, card.material, card.dates].filter(Boolean).join(' · ');
   const citation = card.bop?.citation ? `Bopearachchi ${card.bop.citation}` : '';
   $('result-citation').textContent = citation;
@@ -417,9 +419,10 @@ function renderCard(card) {
     $(`${side}-description`).textContent = card[side].description ?? '—';
   }
   currentCard = card;
+  // The coin a save makes is named by its summary line and keeps the reference in its one short spelling.
   globalThis.gigaPinaxWatchlistReference = Object.freeze({
-    title: [card.label, card.denomination].filter(Boolean).join(' — '),
-    reference: card.label,
+    title: other ? card.label : cardName(card),
+    reference: displayReference(card.label),
     pageUrl: other ? (rpc ?? '') : $('type-link').href,
   });
   dispatchEvent(new CustomEvent('giga-pinax-card', { detail: globalThis.gigaPinaxWatchlistReference }));
@@ -639,7 +642,8 @@ function renderRecent() {
     const item = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = entry.label;
+    // The chip writes the reference as the card heading does; its tooltip keeps the catalogue's own title.
+    button.textContent = displayReference(entry.label);
     button.title = entry.label;
     button.dataset.key = `${entry.corpus}:${entry.id}`;
     button.addEventListener('click', () => openRecent(entry));
@@ -735,7 +739,7 @@ function renderUpcoming(lots, term, context = researchContext, card = priceCard(
 function watchUpcoming(sale, context) {
   if (context !== researchContext) return;
   $('upcoming-status').hidden = true;
-  dispatchEvent(new CustomEvent(WATCH_EVENT, { detail: Object.freeze({ title: lotTitle(sale), reference: priceCard(context).label,
+  dispatchEvent(new CustomEvent(WATCH_EVENT, { detail: Object.freeze({ title: lotTitle(sale), reference: displayReference(priceCard(context).label),
     pageUrl: lotUrl(sale), closesAt: isoDay(sale.date) }) }));
 }
 

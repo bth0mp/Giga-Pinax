@@ -25,6 +25,27 @@ export function documentMode(search = '') {
   return { panel, windowed, acceptsLookupMessages: windowed && !panel };
 }
 
+// One spelling of a reference wherever the popup writes one (the card, a Recent chip, the coin a save makes): the short canonical form a collector
+// types. OCRE titles a second edition in words ("RIC I (second edition) Nero 306", "RIC II, Part 3 (second edition) Hadrian 12"); the short form is
+// "RIC I² Nero 306" and "RIC II.3² Hadrian 12", which parseReference reads back as the same reference. Every other label is already short.
+const SECOND_EDITION = /^RIC (X|IX|VIII|VII|VI|V|IV|III|II|I)(?:, Part (\d))? \((?:second|2nd) edition\) (\S.*)$/;
+export function displayReference(label) {
+  const text = String(label ?? '');
+  const match = SECOND_EDITION.exec(text);
+  return match ? `RIC ${match[1]}${match[2] ? `.${match[2]}` : ''}² ${match[3]}` : text;
+}
+// The edition a short form leaves out, said once in the card's source line: "RIC I, second edition".
+export function editionName(label) {
+  const match = SECOND_EDITION.exec(String(label ?? ''));
+  return match ? `RIC ${match[1]}${match[2] ? `, part ${match[2]}` : ''}, second edition` : '';
+}
+// A coin's name is its card's summary line without the metal ("Nero · As · Rome · AD 62–68"), never the reference again; a card with none of
+// those (a reference kept only for its prices) is named by its reference.
+export function cardName(card) {
+  const summary = [card?.authority, card?.denomination, card?.mint, card?.dates].filter(Boolean).join(' · ');
+  return summary || displayReference(card?.label);
+}
+
 // A list of types stands outside Refine (popup.html), so it opens nothing: only a reference that needs a ruler typed, or a guided field in error, does.
 export function shouldRevealRefine(outcome, field = '') {
   return outcome?.status === 'too-many'

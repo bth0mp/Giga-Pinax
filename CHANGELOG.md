@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Changed
+
+- The popup writes a reference one way, the way it is typed: the card heading and the **Recent** chips read `RIC I² Nero 306` (and `RIC II.3² Hadrian 12`), where they read `RIC I (second edition) Nero 306`; the edition is named once in the card's source line (`Local OCRE catalogue · RIC I, second edition`). A coin saved from the card keeps that short reference and is named by the card's summary line (`Nero · As · Rome · AD 62–68`) instead of the reference again.
+
 ## [0.36.0] - 2026-09-25
 
 ### Added
