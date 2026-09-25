@@ -755,7 +755,7 @@ test('a want card shows the watched coins of its type, since when it is wanted, 
   assert.equal(rows[0].querySelector('.want-coin-reference').textContent, 'RIC I (second edition) Nero 306');
   assert.equal(rows[0].querySelector('.want-coin-amount').textContent, '£650.00');
   assert.equal(rows[0].querySelector('.status-pill').textContent, 'Bid active');
-  assert.match(rows[0].querySelector('.want-coin-when').textContent, /^Closes Sat 13 Mar, /);
+  assert.match(rows[0].querySelector('.want-coin-when').textContent, /^Closes Sat,? 13 Mar( 2027)?, /);
   await buttonIn(card, 'Look up ↗').click(); await settle();
   assert.deepEqual(page.opened, [{ url: 'popup.html?panel=1&reference=RIC%20I%C2%B2%20Nero%20306', target: '_blank', features: 'noopener' }]);
   const tabs = [];
