@@ -1857,3 +1857,23 @@ test('Alternatives is folded until a group exists, and says how many there are',
   const later = await mountWorkspace({ background, hash: '#watchlist' });
   assert.equal(later.$('group-fold').open, true, 'a page with a group opens it');
 });
+
+// H-15: the zones of the houses a collector bids at come first, by their place; every zone follows.
+test('the auction form lists the houses’ zones first, a saved auction’s own at the top, then every zone', async () => {
+  const background = await createWorkspaceBackground();
+  await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Taisei 70', eventKind: 'auction-day', precision: 'date-only', localDate: '2027-10-11', timeZone: 'Asia/Tokyo', reminderScope: 'standalone', reminders: [] } });
+  const page = await mountWorkspace({ background, hash: '#auctions', language: 'en-GB' });
+  await page.click('new-event');
+  const select = page.$('event-form').elements.timeZoneChoice;
+  const [houses, all] = select.children;
+  assert.equal(houses.getAttribute('label'), 'Auction houses’ zones');
+  assert.deepEqual(houses.children.map((option) => option.value).slice(0, 4), ['Asia/Tokyo', 'Europe/London', 'Europe/Zurich', 'Europe/Berlin']);
+  assert.match(houses.children[2].textContent, /^Zurich \(CES?T\)$/);
+  assert.match(houses.children[3].textContent, /^Berlin, Munich \(/);
+  assert.equal(all.getAttribute('label'), 'All zones');
+  assert.equal(all.children[0].value, 'Africa/Abidjan');
+  assert.equal(select.children.at(-1).value, 'other');
+  select.value = 'Europe/Zurich';
+  await page.$('event-form').emit('change', { target: select });
+  assert.equal(page.$('event-form').elements.timeZone.value, 'Europe/Zurich');
+});

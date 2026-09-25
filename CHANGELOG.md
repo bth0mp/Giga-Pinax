@@ -17,6 +17,7 @@ Each date is the date of that version's release tag. Every release also carries 
 - Every amount in the workspace is written one way: in your browser's language, with the short sign only where it names one currency there. The coin list, the Bid tab's line and budget answer, **Active bids**, **History**, the collection totals, your saved comparables and **Compare** no longer mix `€1,300.00` with `1.300,00 €`, or `¥` with `JP¥`; a Swedish or Swiss amount keeps its code (`SEK 12,500.00`). History's money line keeps its columns, the code written once. **Compare** shows a won coin's total cost as History works it out.
 - Each workspace page is headed by the word you pressed in its bar: **Search**, **Watchlist**, **Auctions**, **Active bids**, **History** and **Want list**, where four said Saved comparables, Coin workspace, Auctions and reminders, Active bid exposure or Outcomes and history. The intro lines under the headings are gone; the two that said something the page needs are a note at its foot.
 - **Alternatives** under the coin list is folded, with its count (`Alternatives (0)`), and opens by itself once you keep a group.
+- The auction form's time zone list starts with **Auction houses' zones**: your saved auctions' own, then London, Zurich, Berlin (Munich), Vienna, Paris, New York, Chicago, Los Angeles, Tokyo, Sydney and Hong Kong, each by its place and short zone name (`Zurich (CEST)`); every zone follows under **All zones**.
 
 ### Fixed
 

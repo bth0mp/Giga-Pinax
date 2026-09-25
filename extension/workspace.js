@@ -1048,6 +1048,7 @@ async function initWorkspace() {
 
   // Auctions as rows like the coins' (G-18): name, when, how many coins, and the row itself opens the auction's form.
   function renderEvents() {
+    renderZoneChoices();
     const list = $('event-list'); list.replaceChildren();
     const coinCounts = new Map();
     for (const lot of snapshot.lots ?? []) if (lot.auctionEventId) coinCounts.set(lot.auctionEventId, (coinCounts.get(lot.auctionEventId) ?? 0) + 1);
@@ -1107,7 +1108,28 @@ async function initWorkspace() {
   };
   // The time zone is picked from the browser's list; a name the list lacks is kept and shown under "Other…".
   const zoneChoices = (() => { let zones = []; try { zones = Intl.supportedValuesOf('timeZone'); } catch { /* no list: Other… only */ } return [...new Set([...zones, 'UTC', viewerTimeZone()])].sort(); })();
-  $('event-form').elements.timeZoneChoice.replaceChildren(...zoneChoices.map((zone) => { const option = text('option', zone.replaceAll('_', ' ')); option.value = zone; return option; }), (() => { const option = text('option', 'Other…'); option.value = 'other'; return option; })());
+  // The zones of the houses a collector bids at come first (H-15): the saved auctions' own, then the usual houses' cities,
+  // each by its place and its zone's short name ("Zurich (CEST)"); every zone the browser knows follows, then Other….
+  const HOUSE_ZONES = ['Europe/London', 'Europe/Zurich', 'Europe/Berlin', 'Europe/Vienna', 'Europe/Paris', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Asia/Tokyo', 'Australia/Sydney', 'Asia/Hong_Kong'];
+  const ALSO = { 'Europe/Berlin': ', Munich' };
+  const zoneLabel = (zone) => {
+    let short = '';
+    try { short = new Intl.DateTimeFormat(navigator.language, { timeZone: zone, timeZoneName: 'short' }).formatToParts(new Date()).find(({ type }) => type === 'timeZoneName')?.value ?? ''; } catch { short = ''; }
+    return `${zonePlace(zone)}${ALSO[zone] ?? ''}${short ? ` (${short})` : ''}`;
+  };
+  const zoneOption = (zone, label) => { const option = text('option', label); option.value = zone; return option; };
+  const zoneGroup = (label, options) => { const group = document.createElement('optgroup'); group.setAttribute('label', label); group.append(...options); return group; };
+  let houseZonesShown = null;
+  function renderZoneChoices() {
+    const houses = [...new Set([...(snapshot.auctionEvents ?? []).map(({ timeZone }) => timeZone), ...HOUSE_ZONES])].filter((zone) => zoneChoices.includes(zone));
+    if (houseZonesShown === houses.join()) return;
+    houseZonesShown = houses.join();
+    const select = $('event-form').elements.timeZoneChoice; const chosen = select.value;
+    select.replaceChildren(zoneGroup('Auction houses\u2019 zones', houses.map((zone) => zoneOption(zone, zoneLabel(zone)))),
+      zoneGroup('All zones', zoneChoices.map((zone) => zoneOption(zone, zone.replaceAll('_', ' ')))), zoneOption('other', 'Other…'));
+    if (chosen) select.value = chosen;
+  }
+  renderZoneChoices();
   // Whether the collector chose this form's zone: a zone they chose is never replaced by a remembered one.
   let zoneChosen = false;
   function setEventZone(zone, { note = '' } = {}) {
