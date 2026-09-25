@@ -309,10 +309,13 @@ test('the acsearch and CoinArchives panels write their figures in the browser lo
   assert.equal(spaced(popup.element('sale-list').children[0].children[1].textContent), '120 $');
   // H-11: a sale's day in the browser's language too, never acsearch's 01.01.2025 or an ISO date.
   assert.equal(popup.element('sale-list').children[0].children[0].children[0], '1. Jan. 2025 · ');
+  // S3 fix round (review Minor 4): the last sale's link and the CoinArchives sample's dates too, always with their year.
+  assert.equal(popup.element('last-sale').children[1].textContent, '1. Jan. 2025');
   await popup.element('coinarchives-prices-button').emit('click');
   await settle();
   assert.equal(spaced(popup.element('coinarchives-median').textContent), '150 $');
   assert.equal(popup.element('coinarchives-sale-list').children[0].children[0].textContent, '1. Feb. 2025 · Auction 1, Lot 2');
+  assert.match(popup.element('coinarchives-sample').textContent, / · 1\. Feb\. 2025$/);
 });
 
 // A price button prompts for its own origin, and the first CoinArchives click always prompts: what it kept was written after the lookup that owned the
@@ -461,7 +464,7 @@ test('CoinArchives prices require a dedicated click and render a separate public
   const permission = deferred();
   let calls = 0;
   let requestedOrigins;
-  const popup = await loadPopup({
+  const popup = await loadPopup({ language: 'en-GB',
     permissionRequest: ({ origins }) => { requestedOrigins = origins; return permission.promise; },
     permissionContains: async ({ origins }) => !origins.includes('https://www.coinarchives.com/*'),
     priceFetch: async () => oneSale,
@@ -2192,7 +2195,7 @@ test('a card arriving after its prices is what stays in view', async () => {
 test('the acsearch panel reads as one stat block with one basis line', async () => {
   const lots = [citingSale('a', '220', 'Macedon. Tetradrachm. Price 23. VF'), { ...citingSale('b', '300', 'Macedon. Tetradrachm. Price 23. VF'), date: '01.06.2025' },
     citingSale('c', '380', 'Macedon. Tetradrachm. Price 23. VF'), citingSale('d', '999', 'Macedon. Tetradrachm. Price 3014. VF')];
-  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
+  const popup = await loadPopup({ language: 'en-GB', permissionRequest: async () => true, priceFetch: async () => ({ status: 'ok', lots }) });
   popup.element('quick-reference').value = 'Price 23';
   await popup.element('reference-form').emit('submit');
   await settle();

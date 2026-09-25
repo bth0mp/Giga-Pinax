@@ -261,22 +261,19 @@ function clearPrices(options) {
 const basisLine = (...parts) => parts.filter(Boolean).join(' · ');
 // Said once, in the basis line, wherever a strip of medians by year is drawn.
 const YEARS_BASIS = 'by year: years with at least 3 counted sales';
-// A sale's day as acsearch dates it ("01.06.2028"), written out ("1 Jun 2028"); a date that does not read is shown as it came.
-const saleDay = (text) => {
-  const day = isoDay(text);
-  return day ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`)) : String(text ?? '');
-};
-
 // A day on a list of lots as the Watchlist tab writes a sale day (H-11): "Thu 1 Jun", in the browser's language, with the year only when it is not
-// this year; an upcoming lot's day with its weekday, a sale already held without. A date that does not read is shown as it came.
-function listDay(text, { weekday = false } = {}) {
+// this year (or always, with year); an upcoming lot's day with its weekday, a sale already held without. A date that does not read is shown as it
+// came.
+function listDay(text, { weekday = false, year = false } = {}) {
   const day = isoDay(text);
   if (!day) return String(text ?? '');
   const options = { day: 'numeric', month: 'short', timeZone: 'UTC', ...(weekday ? { weekday: 'short' } : {}),
-    ...(day.slice(0, 4) !== String(new Date().getFullYear()) ? { year: 'numeric' } : {}) };
+    ...(year || day.slice(0, 4) !== String(new Date().getFullYear()) ? { year: 'numeric' } : {}) };
   const date = new Date(`${day}T12:00:00Z`);
   try { return new Intl.DateTimeFormat(navigator.language, options).format(date); } catch { return new Intl.DateTimeFormat('en-GB', options).format(date); }
 }
+// A sale's day as acsearch dates it ("01.06.2028"), written out with its year ("1 Jun 2028"), in the browser's language.
+const saleDay = (text) => listDay(text, { year: true });
 
 // Clearing the output also cancels a lookup in flight, as clearPrices() cancels prices, so its card never refills fields edited while it ran.
 function clearOutput() {
@@ -1046,7 +1043,7 @@ function renderCoinArchivesPrices(shown = shownCoinArchivesPrices, named = false
   $('coinarchives-median-line').hidden = summary.count === 0;
   $('coinarchives-median-currency').textContent = summary.count && !median.includes(currency) ? currency : '';
   const dates = used.map(({ date }) => date).sort();
-  const formatDate = (date) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+  const formatDate = saleDay;
   const dateSpan = dates.length ? ` · ${dates[0] === dates.at(-1) ? formatDate(dates[0]) : `${formatDate(dates[0])}–${formatDate(dates.at(-1))}`}` : '';
   $('coinarchives-sample').textContent = summary.count ? `${period.label}: ${sales(summary.count)}${dateSpan}` : `${period.label}: No recorded sales in this period.`;
   $('coinarchives-counts').textContent = coinArchivesCounts(outcome, currency);
