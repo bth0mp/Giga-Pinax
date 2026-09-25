@@ -1555,6 +1555,7 @@ async function initWorkspace() {
   let editingWant = null;
   const wantForm = $('want-form');
   wantForm.elements.minGrade.append(...WANT_GRADE_CHOICES.map(({ value, label }) => Object.assign(text('option', label), { value })));
+  const defaultWantCurrency = () => (CURRENCIES.includes(snapshot.preferences?.currency) ? snapshot.preferences.currency : CURRENCIES[0]);
   const openWantForm = (want = null) => {
     editingWant = want ? { id: want.id, revision: want.revision } : null;
     wantForm.reset();
@@ -1562,7 +1563,7 @@ async function initWorkspace() {
     f.id.value = want?.id ?? '';
     f.reference.value = want?.reference ?? '';
     f.maxPrice.value = want?.maxPrice ? moneyInputText(want.maxPrice, navigator.language) : '';
-    f.currency.value = want?.maxPrice?.currency ?? (CURRENCIES.includes(snapshot.preferences?.currency) ? snapshot.preferences.currency : CURRENCIES[0]);
+    f.currency.value = want?.maxPrice?.currency ?? defaultWantCurrency();
     f.minGrade.value = want?.minGrade ?? '';
     f.notes.value = want?.notes ?? '';
     $('want-form-heading').textContent = want ? `Edit ${want.reference}` : 'Add a want';
@@ -1601,6 +1602,8 @@ async function initWorkspace() {
       closeWantForm();
       formStatus('wantlist', 'This want was removed in another view.');
     }
+    // A new want nobody has typed in yet follows the default currency, which may have arrived or changed since it opened (H-03).
+    if (!wantForm.hidden && !editingWant && !dirtyEditors.has('want')) wantForm.elements.currency.value = defaultWantCurrency();
     const list = $('want-list'); list.replaceChildren();
     const rows = wantListRows(snapshot, navigator.language);
     if (!rows.length) {

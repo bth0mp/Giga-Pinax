@@ -1774,3 +1774,26 @@ test('captured research text never replaces a query the collector typed', async 
   await load.click(); await settle();
   assert.equal(page.$('research-query').value, 'Nero As RIC 306');
 });
+
+// H-03 / V-11: a want's currency is the collector's default, never the list's first currency written because the settings
+// had not arrived; and a form nobody has touched follows a default changed in another view, while typing keeps its own.
+test('Add want waits for the settings, opens on the default currency, and an untouched form follows a new default', async () => {
+  const background = await createWorkspaceBackground();
+  const created = await background.send({ type: 'preferences.migrateIfAbsent', preferences: { currency: 'GBP' } });
+  assert.equal(created.ok, true, created.message);
+  const page = await mountBeforeSnapshot(background, { hash: '#wants' });
+  assert.equal(page.$('new-want').disabled, true, 'Add want waits for the settings');
+  await page.land();
+  await page.click('new-want');
+  assert.equal(page.$('want-form').elements.currency.value, 'GBP');
+  const euro = await background.send({ type: 'preferences.save', expectedRevision: created.value.revision, preferences: { ...created.value, currency: 'EUR' } });
+  assert.equal(euro.ok, true, euro.message);
+  await settle();
+  assert.equal(page.$('want-form').elements.currency.value, 'EUR', 'an untouched form follows the new default');
+  await page.type('want-form', 'maxPrice', '800');
+  const franc = await background.send({ type: 'preferences.save', expectedRevision: euro.value.revision, preferences: { ...euro.value, currency: 'CHF' } });
+  assert.equal(franc.ok, true, franc.message);
+  await settle();
+  assert.equal(page.$('want-form').elements.currency.value, 'EUR', 'a form the collector typed in keeps its currency');
+  assert.equal(page.$('want-form').elements.maxPrice.value, '800');
+});

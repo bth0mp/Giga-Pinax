@@ -9,6 +9,7 @@ Each date is the date of that version's release tag. Every release also carries 
 ### Fixed
 
 - The workspace no longer lets its first load take over what you started. On a wide screen the first coin of the queue is opened only while nothing is open: never over **Add coin**, typed in or not, never over a form with unsaved input, and it is the first coin the list shows with the filter you typed while the page was loading. Nothing asks "Discard unsaved changes?" during a load. **Add coin**, **Add auction**, **Add want**, **Add group**, **Save manual evidence** and **Enable desktop alerts** wait for your records to load, as the Settings editors do. A captured lot, auction or research text that arrives after you have started on the form it would fill is offered in that form's line (`A captured lot is waiting: Load it · Keep what I typed`) instead of replacing what you typed.
+- A want added while the workspace was still loading could take USD as its currency whatever your default, and save its maximum price so. **Add want** now waits for your settings, and a new want you have not typed in follows your default currency if it changes in another view.
 
 ## [0.38.0] - 2026-09-25
 
