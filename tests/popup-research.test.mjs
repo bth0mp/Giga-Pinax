@@ -90,7 +90,7 @@ class TestElement {
 async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = async () => ({ status: 'empty' }), localProvider = null,
   permissionContains = async () => true, lookupTypeImpl = lookup.lookupType, formValidity = true, search = '', focusedId = '',
   session = new Map(), sessionArea = true, sessionGate = null, messageListeners = [], clipboard = [], stored = new Map(),
-  specimenFetch = lookup.fetchSpecimens, timers = null, intervals = null, clock = null, intl = Intl, language = undefined }) {
+  specimenFetch = lookup.fetchSpecimens, timers = null, intervals = null, clock = null, intl = Intl, language = undefined, innerHeight = undefined, snapshotReady = true }) {
   const elements = new Map();
   TestElement.panelScroll = 0;
   const element = (id) => {
@@ -169,6 +169,9 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
     console,
   };
   sandbox.globalThis = sandbox;
+  if (innerHeight) sandbox.innerHeight = innerHeight;
+  // The watchlist half, not loaded here, has read the store unless a test says it is still reading.
+  sandbox.gigaPinaxSnapshotReady = snapshotReady;
   // A clock a test can move: Date.now() reads it, and every other use of Date is the real one.
   if (clock) sandbox.Date = class extends Date { static now() { return clock.now; } };
 
@@ -2140,6 +2143,29 @@ test('the row holding the Reference box is sticky, and the lookup prompt sits un
   assert.match(css, /\.quick-search \{[^}]*position:sticky; top:0/);
 });
 
+// H-11: Recent comes back with the answer, just above the card, and a lookup scrolled it away under the tabs. The card is brought up with the row still
+// over it - unless that would push the median's figure below the top two thirds of the window (G-03's line, 400 px of 600), when the card comes first.
+test('the answer is brought up with Recent over it while the median still starts in the top two thirds', async () => {
+  for (const [figureTop, expected] of [[600, 224], [700, 264]]) {
+    const timers = [];
+    const card = { id: 'price.23', corpus: 'pella', label: 'Price 23', obverse: {}, reverse: {} };
+    const popup = await loadPopup({ timers, innerHeight: 600, permissionRequest: async () => true, priceFetch: async () => ({ status: 'empty' }),
+      lookupTypeImpl: async () => ({ status: 'ok', card }) });
+    Object.assign(popup.element('popup-scroll'), { top: 100, height: 400 });
+    popup.element('quick-search').height = 56;
+    Object.assign(popup.element('recent'), { top: 380, height: 30 });
+    popup.element('result').top = 420;
+    Object.assign(popup.element('median-line'), { top: figureTop, height: 40 });
+    popup.element('quick-reference').value = 'Price 23';
+    await popup.element('reference-form').emit('submit');
+    await settle();
+    popup.element('median-line').hidden = false;
+    for (const run of timers.splice(0)) run();
+    assert.equal(popup.element('recent').hidden, false);
+    assert.equal(popup.element('popup-scroll').scrolledTo?.[0]?.top, expected, `figure at ${figureTop}`);
+  }
+});
+
 // Prices that come in before the card are brought into view, but the card arriving after them is the answer: the passes still waiting for the prices
 // must not scroll past it.
 test('a card arriving after its prices is what stays in view', async () => {
@@ -2550,6 +2576,27 @@ test('a popup opened with nothing typed draws the last answer again from the ses
   assert.equal(calls.prices, 1);
   assert.equal(reopened.element('prices-restored').hidden, true);
   assert.equal(calls.lookups, 0);
+});
+
+// H-11: a restored card is drawn once the watchlist half has read the store, so it lands with its status row rather than having the row push the
+// panel down a moment later. A fresh lookup never waits on the store.
+test('a restored answer waits for the store to be read, and a lookup does not', async () => {
+  const session = new Map();
+  await answered(session);
+  const reopened = await loadPopup({ session, snapshotReady: false, permissionRequest: async () => true, priceFetch: async () => oneSale });
+  await settle(); await settle();
+  assert.equal(reopened.element('result-reference').textContent, '', 'the card waits for the store');
+  assert.equal(reopened.element('quick-reference').value, '');
+  await reopened.window.emit('giga-pinax-snapshot-ready');
+  await settle(); await settle();
+  assert.equal(reopened.element('result').hidden, false);
+  assert.equal(reopened.element('result-reference').textContent, 'Price 23');
+  const fresh = await loadPopup({ snapshotReady: false, permissionRequest: async () => true, priceFetch: async () => oneSale,
+    lookupTypeImpl: async () => ({ status: 'ok', card: priceCard23 }) });
+  fresh.element('quick-reference').value = 'Price 23';
+  await fresh.element('reference-form').emit('submit');
+  await settle(); await settle();
+  assert.equal(fresh.element('result').hidden, false, 'a lookup draws its card at once');
 });
 
 test('an old, torn or other-currency answer is not drawn as prices, and a prompt reference wins over it', async () => {

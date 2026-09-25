@@ -963,9 +963,15 @@ async function initCompanionPopup() {
 
   // Set once the snapshot has been read: only then is there a revision to write the currency against.
   let currencyWritable = false;
+  // The research half draws a restored answer once the store has been read, or could not be (H-11), so the card lands with its status row.
+  const snapshotRead = () => {
+    globalThis.gigaPinaxSnapshotReady = true;
+    dispatchEvent(new CustomEvent('giga-pinax-snapshot-ready'));
+  };
   if (!bridge || !initializeCompanionPreferences) {
     $('companion-runtime-note').hidden = false;
     document.querySelectorAll('[data-companion-runtime]').forEach((element) => { element.disabled = true; });
+    snapshotRead();
   } else {
     // Blocked site data makes reading localStorage itself throw, and a background that answers nothing leaves no reply to read: either way the page
     // still calculates and looks up references, so it says what it cannot do instead of stopping here.
@@ -994,6 +1000,7 @@ async function initCompanionPopup() {
       showStorageUnavailable();
       announce(reply?.message || STORAGE_UNAVAILABLE, true);
     }
+    snapshotRead();
     bridge.subscribeToSnapshots((incoming) => {
       snapshot = incoming;
       // A coin just saved and since removed elsewhere (a workspace tab) takes its line, and its Undo, with it.

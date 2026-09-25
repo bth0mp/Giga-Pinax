@@ -30,16 +30,30 @@ const revealAgain = (id) => {
   const ticket = ++revealing;
   for (const wait of [0, 60, 400]) setTimeout(() => { if (ticket === revealing) reveal(id); }, wait);
 };
+// Where the answer is brought up from. Recent comes back with a card (H-11), just above it, so a card is brought up with that row still over it -
+// the chips stay in reach - as long as the median's figure still starts in the top two thirds of the window (G-03's line: 400 px of the 600 px
+// popup). Where the row would push the figure below that, as a card saved and wanted does in the popup, the card comes first.
+/** @type {(id: string, top: number) => number} */
+function answerTop(id, top) {
+  const box = $(id).getBoundingClientRect();
+  const recent = id === 'result' && !$('recent')?.hidden ? $('recent').getBoundingClientRect() : null;
+  if (!recent?.height || recent.bottom > box.top) return box.top;
+  const median = $('median-line');
+  const figure = median && !median.hidden ? median.getBoundingClientRect() : null;
+  const limit = (globalThis.innerHeight || Infinity) * 2 / 3;
+  return figure?.height && figure.top - recent.top + top > limit ? box.top : recent.top;
+}
+
 // His own scrolling wins: the panel having moved since the lookup began means he moved it. Errors never scroll - they belong beside the box he typed in.
 function reveal(id) {
   // The top of the panel is taken by the row with the Reference box, which stays there (popup.css), so the answer is brought up to just under it.
   const top = scroller.getBoundingClientRect().top + $('quick-search').getBoundingClientRect().height;
-  const box = $(id).getBoundingClientRect();
-  const target = scroller.scrollTop + box.top - top;
+  const start = answerTop(id, top);
+  const target = scroller.scrollTop + start - top;
   if (!ownScroll && scroller.scrollTop !== restingScroll) return;
   // Nothing to do once the answer starts at the top of the panel, which is also what stops the later passes from fighting the first; a scroll of
   // our own already going there is left to finish, and one going elsewhere is turned towards this answer.
-  if (ownScroll ? Math.abs(target - ownTarget) <= 8 : box.top <= top + 8) return;
+  if (ownScroll ? Math.abs(target - ownTarget) <= 8 : start <= top + 8) return;
   ownScroll = true;
   ownTarget = target;
   // The panel alone is scrolled. scrollIntoView scrolls every ancestor, and a lot's answer can make the document taller than the popup for a moment:
@@ -55,7 +69,7 @@ function reveal(id) {
 /** @type {(id: string) => void} */
 const placeAtTop = (id) => {
   const top = scroller.getBoundingClientRect().top + $('quick-search').getBoundingClientRect().height;
-  const target = scroller.scrollTop + $(id).getBoundingClientRect().top - top;
+  const target = scroller.scrollTop + answerTop(id, top) - top;
   if (target > 0) scroller.scrollTo({ top: target, behavior: 'instant' });
   markScroll();
 };

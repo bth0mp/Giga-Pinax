@@ -1384,9 +1384,17 @@ const answerAge = (shownAt, now = Date.now()) => {
 };
 
 let ageTimer = 0;
+// The watchlist half (companion-popup.js) reads the store as the popup opens and says when it has. A restored card waits for that (H-11), so it
+// lands with its status row instead of the row pushing the panel down a moment later; a fresh lookup never waits on the store.
+// ponytail: capped at two seconds, so a worker that never answers still leaves the last answer drawn, with its row to follow.
+const SNAPSHOT_WAIT_MS = 2000;
+const storeRead = () => (globalThis.gigaPinaxSnapshotReady ? Promise.resolve() : new Promise((resolve) => {
+  window.addEventListener('giga-pinax-snapshot-ready', () => resolve(), { once: true });
+  setTimeout(resolve, SNAPSHOT_WAIT_MS);
+}));
 async function restoreLastAnswer(ticket) {
   let stored;
-  try { stored = await sessionArea()?.get([PENDING_KEY, LAST_ANSWER_KEY]); }
+  try { [stored] = await Promise.all([sessionArea()?.get([PENDING_KEY, LAST_ANSWER_KEY]), storeRead()]); }
   catch { return; }
   // A reference a permission prompt interrupted is the collector's next Look up, and wins over the answer before it.
   if (selectionQuery(stored?.[PENDING_KEY] ?? '')) return;
