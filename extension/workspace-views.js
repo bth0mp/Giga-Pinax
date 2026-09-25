@@ -309,6 +309,34 @@ export function lotRowAmount(lot) {
 }
 
 /**
+ * The amount a coin row shows, in words where one figure would hide a record: a plan saved beside the bid in force is
+ * named after it ("Placed £1,300.00 · plan £1,500.00", Q-10); otherwise the one amount lotRowAmount gives.
+ * @param {Lot | null | undefined} lot
+ * @param {(money: import('./core/types.js').Money) => string} format
+ * @returns {string}
+ */
+export function lotRowAmountLabel(lot, format) {
+  const amount = lotRowAmount(lot);
+  if (!amount) return '';
+  const open = !lot?.outcome?.status || lot.outcome.status === 'open';
+  if (open && lot?.activeBid && lot.plannedBid) return `Placed ${format(lot.activeBid.amount)} · plan ${format(lot.plannedBid.amount)}`;
+  return format(amount);
+}
+
+/**
+ * The plan saved beside the bid in force, which the Bid tab shows the placed terms of (Q-10): "Plan to raise to
+ * €1,500.00 (20%)". Empty when there is no such plan.
+ * @param {Lot | null | undefined} lot
+ * @param {(money: import('./core/types.js').Money) => string} format
+ * @returns {string}
+ */
+export function raisePlanLine(lot, format) {
+  if (!lot?.activeBid || !lot.plannedBid || (lot.outcome?.status && lot.outcome.status !== 'open')) return '';
+  const rate = Number.isInteger(lot.plannedBid.buyerPremiumBps) ? ` (${lot.plannedBid.buyerPremiumBps / 100}%)` : '';
+  return `Plan to raise to ${format(lot.plannedBid.amount)}${rate}`;
+}
+
+/**
  * When a reminder goes off, in the collector's own time - `Tomorrow 08:00 (your time)` - and, when the auction is in
  * another zone, at the auction's wall time too, named by its place: ` · 14:00 Zurich`, with the auction's day where it is
  * not the collector's. Amber within the next 24 hours, muted once it has passed, when the auction's time stays named.

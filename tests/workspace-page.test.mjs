@@ -1311,3 +1311,22 @@ test('the popup’s session median is offered as the maximum only for the same r
   await settle();
   assert.equal(session(), null);
 });
+
+// Q-10: a raise planned while a bid is active is shown beside it - on the row and on the Bid tab - and can be cleared.
+test('a plan saved beside the placed bid is shown on the row and the Bid tab, and Clear plan takes it off', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const lot = storedLot(background, 'Nero, denarius');
+  await background.send({ type: 'bid.place', lotId: lot.id, expectedRevision: 0, activeBid: { amount: { currency: 'EUR', minor: 130000 }, buyerPremiumBps: 2000 } });
+  await background.send({ type: 'bid.plan', lotId: lot.id, expectedRevision: 1, plannedBid: { amount: { currency: 'EUR', minor: 150000 }, buyerPremiumBps: 2000 } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  const row = page.$('lot-list').children.find((item) => item.textContent.includes('Nero, denarius'));
+  assert.ok(row.textContent.includes('Placed €1,300.00 · plan €1,500.00'), row.textContent);
+  await page.openCoin('Nero, denarius');
+  assert.equal(page.$('bid-form').elements.amount.value, '1300.00', 'the form holds the terms in force');
+  assert.equal(page.$('bid-plan-line').hidden, false);
+  assert.equal(page.$('bid-plan-text').textContent, 'Plan to raise to €1,500.00 (20%)');
+  await page.click('clear-plan');
+  assert.equal(Object.hasOwn(storedLot(background, 'Nero, denarius'), 'plannedBid'), false);
+  assert.equal(page.$('bid-plan-line').hidden, true);
+  assert.deepEqual(storedLot(background, 'Nero, denarius').activeBid.amount, { currency: 'EUR', minor: 130000 });
+});

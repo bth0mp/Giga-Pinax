@@ -22,6 +22,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Fixed
 
+- A raise planned while a bid is active no longer disappears: the coin's row reads "Placed €1,300.00 · plan €1,500.00" and its **Bid** tab, which shows the terms in force, says "Plan to raise to €1,500.00 (20%)" with **Clear plan**.
 - A coin placed with a buyer's premium, settled **Lost** by mistake and corrected to **Won** kept no premium rate, so its total stayed **Incomplete** for good. The rate is now read from the last settled or re-opened bid that carries one, before the plan.
 
 ## [0.36.0] - 2026-09-25

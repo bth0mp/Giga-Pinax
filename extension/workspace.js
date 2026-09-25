@@ -20,7 +20,7 @@ import {
   DETAIL_TABS, ROUTES, applyActiveRoute, auctionQueueForLots, buildExposureSections, chooseSelectedLot,
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
-  filterWorkspaceLots, lotRowAmount, lotStatusLabel, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
+  filterWorkspaceLots, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
   wonCostLine,
 } from './workspace-views.js';
 
@@ -546,7 +546,7 @@ async function initWorkspace() {
     for (const lot of visibleLots) {
       const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id));
       const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
-      const amount = lotRowAmount(lot); if (amount) top.append(text('span', formatMoney(amount), 'coin-row-amount'));
+      const amount = lotRowAmountLabel(lot, formatMoney); if (amount) top.append(text('span', amount, 'coin-row-amount'));
       const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
       const event = eventsById.get(lot.auctionEventId);
       const status = text('span', '', 'coin-row-status'); status.append(statusPill(lot));
@@ -824,6 +824,9 @@ async function initWorkspace() {
     const f = $('bid-form').elements;
     for (const [field, value] of Object.entries(editorFormValues.bid(lot))) f[field].value = value;
     for (const [field, value] of Object.entries(bidFeeFields(lot, f.currency.value))) f[field].value = value;
+    // A plan saved beside the bid in force is shown, not hidden behind the placed terms the form holds (Q-10).
+    const plan = raisePlanLine(lot, formatMoney);
+    $('bid-plan-text').textContent = plan; $('bid-plan-line').hidden = !plan;
     f.preset.value = ''; f.budget.value = '';
     $('bid-fees').open = Boolean(lot?.costEstimate && lot.costEstimate.currency === f.currency.value);
     updateBidAnswers();
@@ -926,6 +929,7 @@ async function initWorkspace() {
     const action = event.submitter?.value; if (action === 'place' && !confirm('Confirm that this bid is already active at the auction house.')) return;
     void send(buildBidSaveCommand(action, basis, parsed.value, estimate.value), 'bid');
   });
+  $('clear-plan').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.plannedBid) void send({ type: 'bid.plan', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision, plannedBid: null }, 'bid'); });
   $('cancel-bid').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.activeBid && confirm('Confirm that you cancelled this bid outside the extension.')) void send({ type: 'bid.cancel', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision }, 'bid'); });
 
   function renderEvents() {
