@@ -72,8 +72,10 @@ function loadSettings({
   diagnosticsStored = {},
   clipboard: givenClipboard = null,
   getSelf = null,
+  hash = '',
 } = {}) {
   const copied = [];
+  const closedTabs = [];
   const clipboard = givenClipboard ?? { writeText: async (text) => { copied.push(text); } };
   const document = parseHtmlFile(new URL('../extension/settings.html', import.meta.url));
   const created = [];
@@ -120,7 +122,9 @@ function loadSettings({
     bridge,
     ...browserGlobals(document, { localStorage, confirm, downloads: blobs, language }),
     navigator: { language, clipboard },
-    browser: { runtime: { getManifest: () => manifest }, ...(getSelf ? { management: { getSelf } } : {}) },
+    browser: { runtime: { getManifest: () => manifest }, ...(getSelf ? { management: { getSelf } } : {}),
+      tabs: { getCurrent: async () => ({ id: 7 }), remove: async (id) => { closedTabs.push(id); } } },
+    location: { hash },
     // The diagnostics buffer lives in extension storage; the page reads and clears it through the real module.
     readDiagnostics: () => diagnostics.readDiagnostics({ storage: diagnosticsStorage }),
     clearDiagnostics: () => diagnostics.clearDiagnostics({ storage: diagnosticsStorage }),
@@ -158,6 +162,7 @@ function loadSettings({
     state,
     copied,
     diagnosticsStored,
+    closedTabs,
   };
 }
 
@@ -1416,4 +1421,17 @@ test('import VAT for a foreign sale is off until typed, saved as a rate, and cle
   await page.element('save-settings').click();
   await settle();
   assert.equal(page.commands[1].preferences.importVatBps, 700);
+});
+
+// G-25: opened from the popup, Settings has no page to return to, so its header link closes the tab; opened from the
+// workspace, it offers the way back.
+test('Settings opened from the popup offers Close, and from the workspace the way back', async () => {
+  const fromPopup = await openSettings({});
+  const link = fromPopup.element('settings-return');
+  assert.equal(link.textContent, 'Close');
+  await link.click(); await settle();
+  assert.deepEqual(fromPopup.closedTabs, [7]);
+  const fromWorkspace = await openSettings({ hash: '#from-workspace' });
+  assert.equal(fromWorkspace.element('settings-return').textContent, 'Return to workspace');
+  assert.equal(fromWorkspace.element('settings-return').getAttribute('href'), 'workspace.html#watchlist');
 });

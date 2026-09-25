@@ -770,6 +770,21 @@ $('confirm-import').addEventListener('click', async () => {
   }
 });
 
+// Settings opened from the workspace offers the way back to it; opened from the popup there is no page to return to, so
+// the link closes this tab instead (G-25). The workspace says where it opened Settings from in the address.
+async function closeSettingsTab() {
+  const api = globalThis.browser ?? globalThis.chrome;
+  try {
+    const tab = await api?.tabs?.getCurrent?.();
+    if (tab?.id !== undefined) { await api.tabs.remove(tab.id); return; }
+  } catch { /* try the page's own close */ }
+  try { globalThis.close?.(); } catch { /* nothing more a page can do */ }
+}
+if ((globalThis.location?.hash ?? '') !== '#from-workspace') {
+  $('settings-return').textContent = 'Close';
+  $('settings-return').addEventListener('click', (event) => { event.preventDefault(); void closeSettingsTab(); });
+}
+
 clearPreview();
 renderCsvTables();
 void refreshDiagnostics();

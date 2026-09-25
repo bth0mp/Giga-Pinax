@@ -174,7 +174,8 @@ async function initWorkspace() {
   for (const form of [$('lot-form'), $('outcome-form')]) form.addEventListener('focusin', keepClearOfBar);
   for (const form of new Set([...limited].map((control) => control.closest('form')))) form?.addEventListener('input', (event) => { if (event.target?.dataset?.limit) updateCount(event.target); });
   $('evidence-to').value = `${new Date().getFullYear()}-12-31`;
-  $('open-settings').addEventListener('click', () => void openSettings());
+  // Settings knows it was opened from here, and offers the way back (G-25).
+  $('open-settings').addEventListener('click', () => void openSettings('from-workspace'));
   const detailPanels = {
     details: $('lot-form'), bid: $('bid-form').closest('.detail-section'),
     reminders: $('selected-reminders').closest('.detail-section'), outcome: $('outcome-form').closest('.detail-section'),
