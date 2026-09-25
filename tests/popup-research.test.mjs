@@ -3008,6 +3008,7 @@ test('free words are offered as a search, a ruler opens Refine, and a web addres
   assert.equal(popup.element('ric-volume').value, 'I (2nd edition)');
   assert.equal(popup.element('reference-number').value, '');
   assert.equal(popup.element('free-text-examples').children.length, 3);
+  assert.equal(popup.element('form-error').classList.contains('form-guide'), true, 'an answer, not a refusal');
   assert.match(popup.element('free-text-hint').textContent, /RIC 972/);
   assert.deepEqual([lookedUp.length, searched.length, asked.length], [0, 0, 0], 'nothing is fetched or asked for until the search is chosen');
 
@@ -3017,6 +3018,7 @@ test('free words are offered as a search, a ruler opens Refine, and a web addres
   assert.equal(searched.length, 1);
   assert.equal(searched[0].term, 'nero denarius');
   assert.equal(popup.element('result').hidden, true, 'a phrase search has no card, so nothing can be saved from it');
+  assert.equal(popup.element('refine-reference').open, false, 'Refine folds away for the prices');
   assert.equal(popup.element('research-prices').hidden, false);
   assert.equal(popup.element('prices-panel').hidden, false);
   assert.equal(popup.element('form-error').hidden, true);
@@ -3040,6 +3042,7 @@ test('free words are offered as a search, a ruler opens Refine, and a web addres
   for (const text of ['RIC XI Nero 1', 'Crawfrd 44/5', '1234', 'Price']) {
     await send(text);
     assert.match(popup.element('form-error').textContent, /^Couldn’t read that reference/, text);
+    assert.equal(popup.element('form-error').classList.contains('form-guide'), false, text);
     assert.equal(popup.element('free-text').hidden, true, text);
   }
   assert.equal(searched.length, before);

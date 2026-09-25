@@ -299,6 +299,7 @@ function clearOutput() {
   hideLookupWait();
   $('form-error').hidden = true;
   $('form-error').textContent = '';
+  $('form-error').classList.toggle('form-guide', false);
   $('candidates').hidden = true;
   $('result').hidden = true;
   $('research-prices').hidden = true;
@@ -804,6 +805,8 @@ function showFreeText({ words, ruler }) {
     $('refine-reference').open = true;
   }
   showError(ruler ? rulerMessage(ruler) : NO_CATALOGUE_MESSAGE, ruler ? '' : 'quick-reference');
+  // An answer, not a refusal: said in the ink colour, the error's red kept for what cannot go ahead.
+  $('form-error').classList.toggle('form-guide', true);
   $('free-text').hidden = false;
   if (ruler) $('reference-number').focus({ preventScroll: true });
   revealAgain('form-error');
@@ -819,6 +822,8 @@ function searchPhrase(words) {
   const reference = Object.freeze({ catalogue: 'Other', number: words, volume: '', section: '' });
   researchContext = Object.freeze({ reference, label: words, identity: null, term: words, currency: $('currency').value, priceTicket: priceRequestId, phrase: true });
   const context = researchContext;
+  // The search is the answer he chose: Refine, opened for a ruler, folds away so the prices come up under the box.
+  $('refine-reference').open = false;
   $('price-term').value = words;
   $('price-search').open = false;
   updateAcsearchLink();

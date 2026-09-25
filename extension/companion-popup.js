@@ -577,7 +577,7 @@ async function initCompanionPopup() {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'text-button';
-      const parts = [['coin-reference', reference], ['coin-title', title], ['coin-when', when]].filter(([, words]) => words);
+      const parts = [['coin-reference', reference], ['coin-title', title], [noSale ? 'coin-when coin-unscheduled' : 'coin-when', when]].filter(([, words]) => words);
       parts.forEach(([className, words], index) => {
         const part = document.createElement('span');
         part.className = className;
@@ -975,6 +975,7 @@ async function initCompanionPopup() {
     $('companion-capture-error').hidden = !message;
     if (message) {
       $('form-error').textContent = message;
+      $('form-error').classList.toggle('form-guide', false);
       $('form-error').hidden = false;
       shownFormError = message;
     } else if (shownFormError && $('form-error').textContent === shownFormError) {
