@@ -712,7 +712,7 @@ function loadBridge(browser) {
 // The workspace page, loaded as tests/settings.test.mjs loads Settings: its markup in the fake DOM,
 // its imports handed in as sandbox globals. With a `background` it runs against that store; without
 // one it runs as the standalone preview a page outside the extension shows.
-export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US', wide = false } = {}) {
+export async function mountWorkspace({ background = null, hash = '', confirmAnswers = [], language = 'en-US', wide = false, catalogue = null } = {}) {
   const [money, evidence, projections, sourceLaunchers, fields, bidTools, lookup] = await Promise.all([
     import('../../extension/core/money.js'), import('../../extension/core/evidence.js'),
     import('../../extension/core/projections.js'), import('../../extension/source-launchers.js'),
@@ -726,6 +726,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const calculatorValues = [];
   const timers = [];
   const scrolls = [];
+  const opened = [];
   const windowListeners = new Map();
   const browser = background ? fakeExtensionRuntime(background, commands) : null;
   const bridge = browser ? loadBridge(browser) : null;
@@ -735,6 +736,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     // The calculator's own pure pieces - its fee sheet and budget reading - are the Bid and Outcome tabs' too.
     ...Object.fromEntries(Object.entries(bidTools).filter(([name]) => name !== 'mountBidCalculator')),
     sameZone, zonePlace, parseReference: lookup.parseReference, ...wantlist,
+    // The bundled catalogue the want form asks what it holds (V-02); none unless a test hands one in, as outside the extension.
+    defaultLocalCatalogue: catalogue,
     // The calculator, the sources menu and Settings are other pages' concerns, with tests of their own.
     // What the page hands the calculator is recorded, so a test can run it through the calculator's own rules.
     mountBidCalculator: () => ({ setValues(values) { calculatorValues.push(structuredClone(values)); } }), mountSourcesMenu() {}, openSettings() {},
@@ -757,6 +760,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     setTimeout: (callback, ms = 0) => { timers.push({ callback, ms }); return timers.length; },
     clearTimeout: (handle) => { if (timers[handle - 1]) timers[handle - 1].callback = null; },
     location,
+    // What the page opens in a window of its own (the popup's lookup), recorded for a test to read.
+    open: (url, target, features) => { opened.push({ url, target, features }); return null; },
     // What the page scrolls the window by, recorded for a test to read.
     scrollBy: (x, y) => { scrolls.push([x, y]); },
     addEventListener(type, listener) {
@@ -776,7 +781,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     await $(form).emit('input', { target: control });
   };
   return {
-    $, document, location, commands, prompts, browser, calculatorValues, timers, scrolls,
+    $, document, location, commands, prompts, browser, calculatorValues, timers, scrolls, opened,
     runTimers() { for (const timer of timers.splice(0)) timer.callback?.(); },
     status: () => $('workspace-status').textContent,
     conflictBanner: () => ($('conflict-note').hidden ? '' : $('conflict-editors').textContent),

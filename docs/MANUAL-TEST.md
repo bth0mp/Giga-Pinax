@@ -300,7 +300,7 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     of the lots has `1200000` under `hammer` and `JPY` beside it. A coin in USD, EUR, GBP or CHF still shows two places.
 
 35. **The want list.** In the workspace open **Want list**, select **Add want** and save `RIC I² Nero 306` with a maximum
-    of `650` GBP and **Very Fine (VF) or better**; then try `RIC 306`. *Expected:* the want is listed with "up to £650.00 ·
+    of `650` GBP and **VF · Very Fine**; then try `RIC 306`. *Expected:* the want is listed with "up to £650.00 ·
     VF or better"; `RIC 306` is refused beside **Save want** ("A RIC reference names its volume and its ruler or mint…")
     and nothing is saved. Look up `RIC I (second edition) Nero 306` in the popup. *Expected:* under the card
     the pill **Wanted · up to £650.00 · VF+** (its tooltip "On your want list · up to £650.00 · VF or better"), on the
@@ -308,7 +308,14 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     **Upcoming** (when acsearch lists a lot still to come) the same pill after each lot citing it, whose **Watch** saves
     it in one step. Look up `RIC I² Nero 306a` and `RIC 237`:
     no badge on the card, the list of types or any row. Capture a lot page citing the type and select **Save to
-    watchlist**: the workspace draft says **On your want list** under its Reference. Win a coin of the type: its want
+    watchlist**: the workspace draft shows the **Wanted · up to £650.00 · VF+** pill under its Reference, the popup's pill, with the want's full terms as its tooltip. Win a coin of the type: its want
     offers **Mark found: …**, and once found no card or row carries the badge. Export the **Want list** CSV from Settings.
     A dealer's `RIC I 306` or `RIC I Nero 306`, with no edition mark, reads as the first edition, so a `RIC I²` want
     leaves that card and draft unmarked, while its Upcoming row, read by the citation filter, may carry the badge.
+    Add the want `RIC I Nero 306` after removing the first. *Expected:* "Want saved · RIC I² Nero 306 · you wrote
+    RIC I Nero 306; this is how the catalogue titles it". Add `RIC II Trajan 99999`. *Expected:* refused beside **Save
+    want**: it is not in the bundled catalogue, and nothing is saved.
+    Save a coin of the wanted type to the watchlist with a bid. *Expected:* the want's card says "wanted since …" and lists
+    the coin as a row (reference, bid, sale, pill) that opens it; **Look up ↗** opens the popup's card and **Search
+    acsearch ↗** an acsearch search for the type. Record the coin as **Won**. *Expected:* the outcome's line offers
+    **Mark found on your want list**, which marks the want found by that coin.

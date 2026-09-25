@@ -15,12 +15,13 @@ import { formatMoney, parseMoney } from './money.js';
  * @typedef {{ catalogue: string, number: string, volume?: string, section?: string, range?: string, dottedLetter?: string }} Reading
  */
 
-/** The lowest grade a want asks for, as the Want list writes it: "VF or better". */
-export const WANT_GRADE_LABELS = Object.freeze({ F: 'Fine', VF: 'VF', EF: 'EF', AU: 'AU' });
-/** The same grades as the form offers them, named in full. */
-export const WANT_GRADE_CHOICES = Object.freeze(WANT_GRADES.map((grade) => Object.freeze({
-  value: grade, label: ({ F: 'Fine (F) or better', VF: 'Very Fine (VF) or better', EF: 'Extremely Fine (EF) or better', AU: 'About Uncirculated (AU) or better' })[grade],
-})));
+// One table for the four grades a want can ask for (H-18): the abbreviation a card, a badge and a want's terms write ("VF or
+// better"), and the name the form's list gives it beside the abbreviation ("VF · Very Fine").
+const GRADE_NAMES = Object.freeze({ F: 'Fine', VF: 'Very Fine', EF: 'Extremely Fine', AU: 'About Uncirculated' });
+/** The lowest grade a want asks for, as every page writes it: "VF or better". */
+export const WANT_GRADE_LABELS = Object.freeze(Object.fromEntries(WANT_GRADES.map((grade) => [grade, grade])));
+/** The same grades as the form offers them, the abbreviation first: "VF · Very Fine". */
+export const WANT_GRADE_CHOICES = Object.freeze(WANT_GRADES.map((grade) => Object.freeze({ value: grade, label: `${grade} · ${GRADE_NAMES[grade]}` })));
 
 const field = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const blank = (value) => !field(value);
@@ -81,8 +82,85 @@ export function sameWantedType(left, right) {
   const one = wantedReading(left);
   const other = wantedReading(right);
   if (!one || !other) return false;
-  const same = (key) => (key === 'section' && field(one.catalogue) === 'ric' ? ricSectionKey(one[key]) === ricSectionKey(other[key]) : field(one[key]) === field(other[key]));
-  return ['catalogue', 'volume', 'section', 'number', 'range'].every(same);
+  return ['catalogue', 'volume'].every((key) => field(one[key]) === field(other[key])) && sameShelfPlace(one, other);
+}
+
+// OCRE splits some RIC numbers by denomination and titles each half with it in a bracket ("RIC II Trajan 253 (aureus)",
+// "... (denarius)"): RIC 253 is still one number, so a number written without the bracket is either half, and one
+// written with it is that half only (V-02).
+const BRACKETED = /^(.*?)\s*\(([^()]*)\)$/;
+/**
+ * @param {*} number
+ * @returns {{ base: string, bracket: string }}
+ */
+const numberParts = (number) => {
+  const text = field(number);
+  const match = BRACKETED.exec(text);
+  return match ? { base: match[1], bracket: match[2] } : { base: text, bracket: '' };
+};
+/**
+ * The section, number and range of two readings of one catalogue agree: a RIC mint in either of its names, and a RIC
+ * number with or without OCRE's bracketed denomination.
+ * @param {Reading} one
+ * @param {Reading} other
+ * @returns {boolean}
+ */
+function sameShelfPlace(one, other) {
+  const ric = field(one.catalogue) === 'ric';
+  if (ric ? ricSectionKey(one.section) !== ricSectionKey(other.section) : field(one.section) !== field(other.section)) return false;
+  if (field(one.range) !== field(other.range)) return false;
+  if (!ric) return field(one.number) === field(other.number);
+  const left = numberParts(one.number); const right = numberParts(other.number);
+  return left.base === right.base && (!left.bracket || !right.bracket || left.bracket === right.bracket);
+}
+
+// OCRE titles a second edition in words ("RIC I (second edition) Nero 306"); a want is written in the short form the popup
+// writes a card's reference in ("RIC I² Nero 306"), which parseReference reads back as the same type. Kept in step with
+// companion-popup.js displayReference.
+const SECOND_EDITION = /^RIC (X|IX|VIII|VII|VI|V|IV|III|II|I)(?:, Part (\d))? \((?:second|2nd) edition\) (\S.*)$/;
+/**
+ * A card's title as a want is written.
+ * @param {*} label
+ * @returns {string}
+ */
+export function cardReference(label) {
+  const text = String(label ?? '').trim();
+  const match = SECOND_EDITION.exec(text);
+  return match ? `RIC ${match[1]}${match[2] ? `.${match[2]}` : ''}² ${match[3]}` : text;
+}
+
+/**
+ * What the bundled catalogue holds for a want, and so what is saved (V-02): a want is kept only where a card could ever
+ * match it. A reference the catalogue opens, or lists, as the same type is saved as written; one it holds only under
+ * another volume or edition of the same ruler or mint and number is saved as the card titles it ("RIC I Nero 306" is
+ * RIC I² Nero 306, the only RIC I OCRE holds; "RIC V.2 Probus 157" is RIC V Probus 157), and `note` says so; several such
+ * cards are offered as `choices`; and one the catalogue does not hold is refused with the reason. A catalogue the bundle
+ * does not hold (Bopearachchi), a lookup that fails, or no catalogue at all, keeps the reference as written: it cannot be
+ * checked here. Nothing is fetched beyond the bundled files.
+ * @param {string} reference the collector's text, one type by `wantReferenceProblem`
+ * @param {((reading: Reading) => Promise<*>) | null | undefined} lookupType the bundled catalogue's lookup
+ * @returns {Promise<{ ok: true, reference: string, note: string } | { ok: false, message: string, choices: string[] }>}
+ */
+export async function resolveWantReference(reference, lookupType) {
+  const asWritten = { ok: /** @type {true} */ (true), reference, note: '' };
+  const reading = wantedReading(reference);
+  if (!reading || typeof lookupType !== 'function') return asWritten;
+  let found = null;
+  try { found = await lookupType(reading); } catch { found = null; }
+  if (!found || !['ok', 'candidates', 'none'].includes(found.status)) return asWritten;
+  const titles = found.status === 'ok' ? [found.card?.label] : found.status === 'candidates' ? (found.candidates ?? []).map((entry) => entry?.title ?? entry?.label) : [];
+  const cards = [...new Set(titles.filter(Boolean).map(cardReference))].filter((card) => wantedReading(card));
+  const renamed = (card) => ({ ok: /** @type {true} */ (true), reference: card, note: `you wrote ${reference}; this is how the catalogue titles it` });
+  // A card opened for this very reading is the type, whatever its title looks like (SC and Newell are titled in words).
+  if (found.status === 'ok') return !cards.length || sameWantedType(cards[0], reference) ? asWritten : renamed(cards[0]);
+  if (cards.some((card) => sameWantedType(card, reference))) return asWritten;
+  const near = cards.filter((card) => {
+    const other = wantedReading(card);
+    return Boolean(other) && field(other?.catalogue) === field(reading.catalogue) && sameShelfPlace(reading, /** @type {Reading} */ (other));
+  });
+  if (near.length === 1) return renamed(near[0]);
+  if (near.length > 1) return { ok: false, message: `The catalogue holds ${reference} in ${near.length} volumes or editions. Choose the one you want:`, choices: near };
+  return { ok: false, message: `${reference} is not in the catalogue bundled with Giga Pinax, so no card could ever match this want. Check the volume, the ruler or mint and the number.`, choices: [] };
 }
 
 /**
@@ -97,7 +175,8 @@ export function wantReferenceProblem(reference) {
   if (namesOneType(reading)) return '';
   if (reading?.catalogue === 'RIC') return 'A RIC reference names its volume and its ruler or mint, as a card does: RIC II Trajan 253, RIC VII Antioch 1.';
   if (reading?.catalogue === 'Bop') return 'A Bopearachchi reference names its king, as a card does: Bopearachchi Menander I 13A.';
-  return `“${text}” is not read as one catalogue type. A want is a RIC, RRC, Price, SC, CPE or Bopearachchi reference, such as RIC I² Nero 306 or RRC 44/5.`;
+  if (/^newell\b/i.test(text)) return 'A Newell reference names Demetrius, as a card does: Newell Demetrius 45.';
+  return `“${text}” is not read as one catalogue type. A want is a RIC, RRC, Price, SC, CPE, Newell Demetrius or Bopearachchi reference, such as RIC I² Nero 306, RRC 44/5 or Newell Demetrius 45.`;
 }
 
 /**
@@ -139,6 +218,35 @@ export function wantBadgeText(matches, locale = 'en-US') {
 }
 
 /**
+ * The coins still open on the watchlist that are the want's type (H-08): what the hunt has turned up so far, in the order
+ * they were saved.
+ * @param {Want | null | undefined} want
+ * @param {Lot[] | null | undefined} lots
+ * @returns {Lot[]}
+ */
+export function watchedLotsFor(want, lots) {
+  const open = (lot) => !lot?.outcome?.status || lot.outcome.status === 'open';
+  return (Array.isArray(lots) ? lots : []).filter((lot) => open(lot) && sameWantedType(lot?.reference, want?.reference));
+}
+
+/**
+ * A wanted type as its status pill says it (H-05): "Wanted · up to £650.00 · VF+", from the first want of the type; '' when
+ * the type is on no want list. wantBadgeText words the same in full, for the pill's tooltip. The same words as the popup's
+ * card and Upcoming rows (companion-popup.js on loop/s3 writes them with the same rule).
+ * @param {Want[]} matches
+ * @param {string} [locale]
+ * @returns {string}
+ */
+export function wantPillText(matches, locale = 'en-US') {
+  const want = matches?.[0];
+  if (!want) return '';
+  const parts = ['Wanted'];
+  if (want.maxPrice) { try { parts.push(`up to ${formatMoney(want.maxPrice, locale, { narrow: true })}`); } catch { /* not a price to say */ } }
+  if (Object.hasOwn(WANT_GRADE_LABELS, want.minGrade ?? '')) parts.push(`${want.minGrade}+`);
+  return parts.join(' · ');
+}
+
+/**
  * The won coins a want could be marked found by: saved, won, and of its type.
  * @param {Want} want
  * @param {Lot[] | null | undefined} lots
@@ -147,6 +255,29 @@ export function wantBadgeText(matches, locale = 'en-US') {
 export function wonCoinsFor(want, lots) {
   return (Array.isArray(lots) ? lots : []).filter((lot) => lot?.outcome?.status === 'won' && sameWantedType(lot.reference, want?.reference));
 }
+
+/**
+ * The other want of a reference's type, open or found, that stops it being saved (V-08): one want per type, so a badge
+ * speaks for one want and a found want can always be edited. A want being edited is never its own twin, and one that keeps
+ * the type it already had is not stopped by a twin an older version let in.
+ * @param {Want[] | null | undefined} wants
+ * @param {*} reference
+ * @param {Want | null | undefined} [editing]
+ * @returns {Want | null}
+ */
+export function wantTwin(wants, reference, editing = null) {
+  if (editing && sameWantedType(editing.reference, reference)) return null;
+  return (Array.isArray(wants) ? wants : []).find((want) => want?.id !== editing?.id && sameWantedType(want?.reference, reference)) ?? null;
+}
+
+/**
+ * Why a want's twin stops it, in the words the form and the store both say.
+ * @param {Want} twin
+ * @returns {string}
+ */
+export const wantTwinMessage = (twin) => (twin.foundLotId
+  ? `${twin.reference} is already on your want list, marked found. Choose Want again on it to look for another.`
+  : `${twin.reference} is already on your want list.`);
 
 /**
  * The Want list form read into what `want.save` takes, or the field that stops it and why. The reference must name one
@@ -166,8 +297,8 @@ export function wantFromForm(values, { wants = [], locale = 'en-US' } = {}) {
   if (editing?.foundLotId && !sameWantedType(editing.reference, reference)) {
     return { ok: false, field: 'reference', message: 'Choose Want again before changing what this want is for.' };
   }
-  const twin = list.find((want) => want.id !== values.id && !want.foundLotId && sameWantedType(want.reference, reference));
-  if (twin) return { ok: false, field: 'reference', message: `${twin.reference} is already on your want list.` };
+  const twin = wantTwin(list, reference, editing);
+  if (twin) return { ok: false, field: 'reference', message: wantTwinMessage(twin) };
   /** @type {Record<string, any>} */
   const want = { reference };
   if (String(values.maxPrice ?? '').trim()) {

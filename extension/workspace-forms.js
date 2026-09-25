@@ -181,8 +181,8 @@ export function bidLiveLine(values, locale = 'en-US') {
   const cost = calculateBidCost(amount.value, premium.value, fees.value ?? {});
   if (!cost.ok) return cost.error.message;
   const feeMinor = cost.value.total.minor - cost.value.hammerPlusPremium.minor;
-  return [`≈ ${formatMoney(cost.value.total, locale)} all-in`, `premium ${formatMoney(cost.value.premium, locale)}`,
-    fees.value ? `fees ${formatMoney({ currency: cost.value.total.currency, minor: feeMinor }, locale)}` : 'no fees recorded'].join(' · ');
+  return [`≈ ${formatMoney(cost.value.total, locale, { narrow: true })} all-in`, `premium ${formatMoney(cost.value.premium, locale, { narrow: true })}`,
+    fees.value ? `fees ${formatMoney({ currency: cost.value.total.currency, minor: feeMinor }, locale, { narrow: true })}` : 'no fees recorded'].join(' · ');
 }
 
 // The budget fold's answer: the highest hammer whose whole cost fits, on the house's ladder when its preset is chosen
@@ -204,7 +204,7 @@ export function bidBudgetAnswer(values, ladder, locale = 'en-US') {
     incrementText: String(values.increment ?? ''), minimumText: String(values.minimum ?? ''),
   }));
   if (!calculated.ok) return { text: calculated.error.message, hammer: null };
-  const text = `Maximum hammer ${formatMoney(calculated.value.hammer, locale)} · ${formatMoney(calculated.value.total, locale)} all-in${calculated.ladderNotice ? `. ${calculated.ladderNotice}` : ''}`;
+  const text = `Maximum hammer ${formatMoney(calculated.value.hammer, locale, { narrow: true })} · ${formatMoney(calculated.value.total, locale, { narrow: true })} all-in${calculated.ladderNotice ? `. ${calculated.ladderNotice}` : ''}`;
   return { text, hammer: calculated.value.hammer };
 }
 
