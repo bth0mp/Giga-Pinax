@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { LIMITS, RECORDS_LIMIT_BYTES, SCHEMA_VERSION, createEmptySnapshot, quarantineEntryId, storedBytes } from '../extension/core/records.js';
 import { BACKUP_FORMAT, exportBackup, quarantineRestoreText, quarantineRows } from '../extension/core/backup.js';
@@ -739,6 +740,13 @@ test('an expired draft is cleared by the next change of any kind', () => {
   assert.equal(consumed.ok, false, 'an expired draft is not handed out');
   state = reduce(state, command('lot.save', { expectedRevision: null, lot: { title: 'Much later', sourceLinks: [] } }), later);
   assert.deepEqual(state.snapshot.drafts, [], 'and it is gone with the next write');
+});
+
+// Review Minor 4: nothing deletes an expired capture at the day's end; the next change does. PRIVACY says so.
+test('PRIVACY says an expired capture draft is dropped at the next change, as the store does', () => {
+  const policy = readFileSync(new URL('../docs/PRIVACY.md', import.meta.url), 'utf8');
+  assert.match(policy, /A capture draft is kept for a day, listed in the workspace until you use or discard it, and dropped at the next change to your records after that\./);
+  assert.doesNotMatch(policy, /A capture draft is kept for a day[^.]*and then deleted/);
 });
 
 test('saves bounded unique house premiums and preserves them for older callers', () => {
