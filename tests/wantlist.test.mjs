@@ -514,7 +514,9 @@ test('a captured lot citing a wanted type is marked in its draft, and one that d
   assert.equal(pill.className, 'pill want-pill');
   assert.equal(pill.textContent, 'Wanted · up to £650 · VF+');
   assert.equal(pill.title, 'On your want list · up to £650.00 · VF or better');
-  assert.equal(page.$('lot-want-match').textContent, 'Wanted · up to £650 · VF+');
+  // The whole terms are also spoken: the short pill is hidden from a screen reader, the terms are its text.
+  assert.equal(pill.getAttribute('aria-hidden'), 'true');
+  assert.equal(page.$('lot-want-match').querySelector('.sr-only').textContent, 'On your want list · up to £650.00 · VF or better');
   // Typed to a neighbour, the mark goes; typed back, it returns.
   await page.typeDetails('reference', 'RIC I² Nero 306a');
   assert.equal(page.$('lot-want-match').hidden, true);
