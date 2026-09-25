@@ -76,6 +76,9 @@ async function initWorkspace() {
     select.replaceChildren(...CURRENCIES.map((code) => { const option = text('option', code); option.value = code; return option; }));
   }
   const view = () => ({ locale: navigator.language });
+  // Every amount the page writes, by the one money rule (H-04, V-10): the collector's language, and the short sign only where it
+  // names one currency there.
+  const money = (amount) => formatMoney(amount, navigator.language, { narrow: true });
   // An auction's name, its day and time, and how soon, the relative part toned: amber within 48 hours, muted once past.
   const eventLine = (event, className, tag = 'span', withName = true) => {
     const line = text(tag, '', className);
@@ -517,7 +520,7 @@ async function initWorkspace() {
     output.replaceChildren();
     if (stats.validationError && evidenceRows.length) output.append(text('p', stats.validationError.message));
     else {
-      const { headline, leftOut } = comparableSummary(evidenceRows, stats, formatMoney);
+      const { headline, leftOut } = comparableSummary(evidenceRows, stats, money);
       output.append(text('p', headline, 'metric-headline'));
       if (leftOut) output.append(text('p', leftOut, 'field-note'));
     }
@@ -529,7 +532,7 @@ async function initWorkspace() {
       card.append(text('h4', row.saleIdentity ? `${row.saleIdentity.auctionHouse}, ${row.saleIdentity.houseSaleId}, lot ${row.saleIdentity.lotNumber}` : first ? `${first.auctionHouse}${first.houseSaleId ? `, ${first.houseSaleId}` : ''}, lot ${first.lotNumber}` : `Observation ${row.id}`));
       card.append(text('p', `${row.inclusion}${row.exclusionReason ? `: ${row.exclusionReason}` : ''}${row.conflictFields?.length ? ` · conflicts: ${row.conflictFields.join(', ')}` : ''}`));
       for (const observation of row.observations ?? []) {
-        const amount = observation.amount ? formatMoney(observation.amount) : 'No amount';
+        const amount = observation.amount ? money(observation.amount) : 'No amount';
         card.append(text('p', `${observation.source} · ${dayText(observation.auctionDate)} · ${observation.priceBasis} · ${amount}${observation.retrievedAt ? ` · retrieved ${dayText(observation.retrievedAt)}` : ''}`));
         card.append(text('p', `Query ${observation.queryLabel ?? observation.queryId}`));
         if (observation.sourceUrl) {
@@ -602,7 +605,7 @@ async function initWorkspace() {
     for (const lot of visibleLots) {
       const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id));
       const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
-      const amount = lotRowAmountLabel(lot, formatMoney); if (amount) top.append(text('span', amount, 'coin-row-amount'));
+      const amount = lotRowAmountLabel(lot, money); if (amount) top.append(text('span', amount, 'coin-row-amount'));
       const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
       const event = eventsById.get(lot.auctionEventId);
       const status = text('span', '', 'coin-row-status'); status.append(statusPill(lot));
@@ -783,11 +786,12 @@ async function initWorkspace() {
   $('lot-queue').addEventListener('change', renderCoinList);
   $('open-comparison').addEventListener('click', () => {
     const grid = $('comparison-grid'); grid.replaceChildren();
-    for (const lot of comparisonRows(snapshot.lots ?? [], comparisonSelection)) {
+    for (const lot of comparisonRows(snapshot.lots ?? [], comparisonSelection, navigator.language)) {
       const card = text('article', '', 'comparison-card'); card.append(text('h4', lot.title, 'comparison-title'));
       if (lot.reference) card.append(text('p', lot.reference, 'comparison-reference'));
       card.append(text('p', lot.amountLabel, 'comparison-amount'));
       if (lot.actualTotalLabel) card.append(text('p', lot.actualTotalLabel, 'comparison-total'));
+      if (lot.costLabel) card.append(text('p', lot.costLabel, 'comparison-total'));
       if (lot.estimateLabel) card.append(text('p', lot.estimateLabel, 'comparison-fees'));
       if (lot.totalLabel) card.append(text('p', lot.totalLabel, 'comparison-total'));
       const details = lot.coinDetails ?? {};
@@ -913,7 +917,7 @@ async function initWorkspace() {
     for (const [field, value] of Object.entries(editorFormValues.bid(lot))) f[field].value = value;
     for (const [field, value] of Object.entries(bidFeeFields(lot, f.currency.value))) f[field].value = value;
     // A plan saved beside the bid in force is shown, not hidden behind the placed terms the form holds (Q-10).
-    const plan = raisePlanLine(lot, formatMoney);
+    const plan = raisePlanLine(lot, money);
     $('bid-plan-text').textContent = plan; $('bid-plan-line').hidden = !plan;
     f.preset.value = ''; f.budget.value = '';
     $('bid-fees').open = Boolean(feeSheetOf(lot?.costEstimate) && lot?.costEstimate?.currency === f.currency.value);
@@ -954,7 +958,7 @@ async function initWorkspace() {
     const own = found.find((item) => item.currency === currency);
     const years = (item) => item.firstYear === null ? '' : `, ${item.firstYear === item.lastYear ? item.firstYear : `${item.firstYear}–${item.lastYear}`}`;
     strip.append(text('p', !own ? `No saved comparables for ${reference} in ${currency}.`
-      : own.median ? `Your saved comparables for ${reference}: median ${formatMoney(own.median)} from ${own.count}${years(own)}`
+      : own.median ? `Your saved comparables for ${reference}: median ${money(own.median)} from ${own.count}${years(own)}`
         : `Your saved comparables for ${reference}: ${own.count} in ${currency}, too few for a median${years(own)}`, 'bid-evidence-figure'));
     const others = found.filter((item) => item.currency !== currency);
     if (others.length) strip.append(text('p', `${own ? 'Also' : 'Saved'} ${others.map((item) => `${item.count} in ${item.currency}`).join(', ')}, not converted.`, 'bid-evidence-other'));
@@ -962,7 +966,7 @@ async function initWorkspace() {
     // catalogue rules, never by its spelling - and in the bid's own currency, each provider on its own line; offered,
     // never stored (G-04).
     for (const session of sessionMedians.filter((item) => item.currency === currency && sameReference(item.reference, reference))) {
-      const line = text('p', `${session.providerLabel} median ${formatMoney(session.median)} from ${session.count} ${session.count === 1 ? 'sale' : 'sales'} · ${sessionMedianAge(session.at)}, session only`, 'bid-evidence-session');
+      const line = text('p', `${session.providerLabel} median ${money(session.median)} from ${session.count} ${session.count === 1 ? 'sale' : 'sales'} · ${sessionMedianAge(session.at)}, session only`, 'bid-evidence-session');
       if (!$('bid-fields').disabled) {
         const use = text('button', 'Use as maximum', 'quiet'); use.type = 'button'; use.dataset.provider = session.provider;
         use.addEventListener('click', () => {
@@ -1025,7 +1029,7 @@ async function initWorkspace() {
     void send(buildBidSaveCommand(action, basis, parsed.value, estimate.value), 'bid').then((reply) => {
       if (!reply?.ok || reply.editorPreserved) return;
       const rate = Number.isInteger(parsed.value.buyerPremiumBps) ? ` · ${parsed.value.buyerPremiumBps / 100}%` : '';
-      formStatus('bid', action === 'place' ? `Placed bid recorded · ${formatMoney(parsed.value.amount)}${rate}` : `Plan saved · ${formatMoney(parsed.value.amount)} max${rate}`);
+      formStatus('bid', action === 'place' ? `Placed bid recorded · ${money(parsed.value.amount)}${rate}` : `Plan saved · ${money(parsed.value.amount)} max${rate}`);
     });
   });
   $('clear-plan').addEventListener('click', () => { const basis = editorBases.get('bid'); if (basis?.record?.plannedBid) void send({ type: 'bid.plan', requestId: requestId(), lotId: basis.id, expectedRevision: basis.revision, plannedBid: null }, 'bid').then((reply) => { if (reply?.ok) formStatus('bid', 'Plan cleared'); }); });
@@ -1205,7 +1209,7 @@ async function initWorkspace() {
   $('mark-all-read').addEventListener('click', () => void send({ type: 'alert.markAllRead', requestId: requestId() }));
   $('enable-notifications').addEventListener('click', async () => { if (!bridge) return; if (!snapshot.preferences) return announce('Preferences are not ready. Reload and try again.', true); const allowed = await bridge.requestNotificationPermission(); const current = snapshot.preferences; void send({ type: 'preferences.save', requestId: requestId(), expectedRevision: current.revision, preferences: { currency: current.currency, desktopAlertsEnabled: allowed } }); });
 
-  function renderExposure() { const root = $('exposure-list'); root.replaceChildren(); const sections = buildExposureSections(snapshot); if (!sections.length) return root.append(text('p', 'No externally active bids.')); for (const section of sections) { const card = text('article', '', 'exposure-card'); card.append(text('h3', section.currency)); card.append(text('div', formatMoney({ currency: section.currency, minor: section.hammerMinor }), 'exposure-total')); card.append(text('p', `Binding hammer · ${section.bindingCount} bid${section.bindingCount === 1 ? '' : 's'}`)); card.append(text('p', `Known hammer + BP ${formatMoney({ currency: section.currency, minor: section.knownHammerPlusBpMinor })}`)); if (section.totalCount) card.append(text('p', `All-in if every bid wins ${formatMoney({ currency: section.currency, minor: section.knownTotalMinor })} (${section.totalCount} of ${section.bindingCount} with fees)`, 'exposure-all-in')); if (section.unknownPremiumCount) card.append(text('p', `Incomplete — premium unknown for ${section.unknownPremiumCount} bid${section.unknownPremiumCount === 1 ? '' : 's'}`)); for (const event of section.events) card.append(text('p', `${event.name}: ${formatMoney({ currency: section.currency, minor: event.hammerMinor })}`)); root.append(card); } }
+  function renderExposure() { const root = $('exposure-list'); root.replaceChildren(); const sections = buildExposureSections(snapshot); if (!sections.length) return root.append(text('p', 'No externally active bids.')); for (const section of sections) { const card = text('article', '', 'exposure-card'); card.append(text('h3', section.currency)); card.append(text('div', money({ currency: section.currency, minor: section.hammerMinor }), 'exposure-total')); card.append(text('p', `Binding hammer · ${section.bindingCount} bid${section.bindingCount === 1 ? '' : 's'}`)); card.append(text('p', `Known hammer + BP ${money({ currency: section.currency, minor: section.knownHammerPlusBpMinor })}`)); if (section.totalCount) card.append(text('p', `All-in if every bid wins ${money({ currency: section.currency, minor: section.knownTotalMinor })} (${section.totalCount} of ${section.bindingCount} with fees)`, 'exposure-all-in')); if (section.unknownPremiumCount) card.append(text('p', `Incomplete — premium unknown for ${section.unknownPremiumCount} bid${section.unknownPremiumCount === 1 ? '' : 's'}`)); for (const event of section.events) card.append(text('p', `${event.name}: ${money({ currency: section.currency, minor: event.hammerMinor })}`)); root.append(card); } }
 
   // One row per currency, each in its own money: a hammer or invoice total covers the entries that
   // recorded one, and says how many of the currency's entries that is when it is not all of them.
@@ -1218,7 +1222,7 @@ async function initWorkspace() {
     // A coin whose fees were never recorded counts as having none, and the figure says how many did (G-05).
     const total = (currency, minor, count, of, none = 'None recorded', noFees = 0) => {
       if (!count) return none;
-      const amount = minor === null ? 'Too large to total' : formatMoney({ currency, minor });
+      const amount = minor === null ? 'Too large to total' : money({ currency, minor });
       const parts = [count < of ? `${count} of ${of}` : '', noFees ? `${noFees} without fees` : ''].filter(Boolean);
       return parts.length ? `${amount} (${parts.join(', ')})` : amount;
     };
@@ -1242,7 +1246,7 @@ async function initWorkspace() {
     if (comparables.status === 'no-currency') return 'No saved comparables: no amount recorded, so no currency to compare in';
     if (comparables.status === 'none') return `No saved comparables for ${item.reference} in ${comparables.currency}`;
     if (comparables.status === 'too-few') return `Your saved comparables for ${item.reference}: ${comparables.count} in ${comparables.currency}, too few for a median`;
-    return `Your saved comparables for ${item.reference}: median ${formatMoney(comparables.median)} from ${comparables.count} in ${comparables.currency}`;
+    return `Your saved comparables for ${item.reference}: median ${money(comparables.median)} from ${comparables.count} in ${comparables.currency}`;
   };
   // A won coin's Hammer · Premium · Fees · Total, currency code once, then the premium rate and each fee, or what
   // stopped the total from being worked out.
@@ -1360,11 +1364,11 @@ async function initWorkspace() {
   const entryInvoiceLine = (entry, lot) => {
     const corrected = entry.editedFields?.includes('actualInvoice');
     const recorded = lot?.outcome?.actualInvoice;
-    if (!entry.actualInvoice) return corrected && recorded ? `Invoice paid: none (your correction; the outcome records ${formatMoney(recorded)})` : null;
-    let line = `Invoice paid ${formatMoney(entry.actualInvoice)}`;
+    if (!entry.actualInvoice) return corrected && recorded ? `Invoice paid: none (your correction; the outcome records ${money(recorded)})` : null;
+    let line = `Invoice paid ${money(entry.actualInvoice)}`;
     if (corrected) {
       const differs = recorded && (recorded.currency !== entry.actualInvoice.currency || recorded.minor !== entry.actualInvoice.minor);
-      line += differs ? ` (your correction; the outcome records ${formatMoney(recorded)})` : ' (your correction)';
+      line += differs ? ` (your correction; the outcome records ${money(recorded)})` : ' (your correction)';
     }
     return line;
   };
@@ -1400,8 +1404,8 @@ async function initWorkspace() {
       if (ledger) card.append(text('p', ledger, 'history-line'));
       // A lost coin's hammer is said once, in the line of the bid that decided it.
       if (line) card.append(...costLineParts(line, lot.id));
-      if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${formatMoney(lot.outcome.actualInvoice)}, as you recorded it`));
-      card.append(text('p', decidingBidLine(lot, formatMoney), 'history-bid'));
+      if (lot.outcome.actualInvoice) card.append(text('p', `Actual invoice ${money(lot.outcome.actualInvoice)}, as you recorded it`));
+      card.append(text('p', decidingBidLine(lot, money), 'history-bid'));
       const entry = entriesByLot.get(lot.id);
       if (entry) { shownEntries.add(entry.id); appendEntry(card, entry, viewByEntry.get(entry.id), lot); }
       root.append(card);
@@ -1411,7 +1415,7 @@ async function initWorkspace() {
     for (const entry of (snapshot.collectionEntries ?? []).filter(({ id }) => !shownEntries.has(id))) {
       const lot = lotsById.get(entry.lotId);
       const card = text('article', '', 'record'); card.append(text('h3', entry.title));
-      if (entry.hammer) card.append(text('p', `Hammer ${formatMoney(entry.hammer)}`));
+      if (entry.hammer) card.append(text('p', `Hammer ${money(entry.hammer)}`));
       appendEntry(card, entry, viewByEntry.get(entry.id), lot);
       root.append(card);
     }
@@ -1473,7 +1477,7 @@ async function initWorkspace() {
     const status = lot?.outcome?.status;
     if (!status) return;
     const words = { won: 'Won', lost: 'Lost', passed: 'Passed', open: 'open again' }[status];
-    const hammer = lot.outcome.hammer ? ` at ${formatMoney(lot.outcome.hammer)}` : '';
+    const hammer = lot.outcome.hammer ? ` at ${money(lot.outcome.hammer)}` : '';
     const moved = status !== 'open' && !['completed', 'all-coins'].includes($('lot-queue').value) ? ' · now under Completed' : '';
     const history = status === 'open' ? '' : ' · in History';
     formStatus('outcome', `Outcome saved · ${words}${hammer}${history}${moved}`, status === 'open' ? {} : { action: { label: 'Open', run: () => { routeChangeFromNav = false; location.hash = '#history'; setRoute(); } } });

@@ -9,6 +9,7 @@ import { COIN_REMOVED_NOTICE } from '../extension/workspace-editing.js';
 import { STORAGE_KEY } from '../extension/store.js';
 import { exportBackup } from '../extension/core/backup.js';
 import { csvFiles } from '../extension/core/csv.js';
+import { formatMoney } from '../extension/core/money.js';
 
 async function backgroundWithCoins(...titles) {
   const background = await createWorkspaceBackground();
@@ -1796,4 +1797,38 @@ test('Add want waits for the settings, opens on the default currency, and an unt
   await settle();
   assert.equal(page.$('want-form').elements.currency.value, 'EUR', 'a form the collector typed in keeps its currency');
   assert.equal(page.$('want-form').elements.maxPrice.value, '800');
+});
+
+// H-04 / V-10: one money rule on every workspace screen - the collector's language, and the short sign only where it names
+// one currency there - so a coin row never reads "€1,300.00" beside "1.300,00 €" in the form, nor "¥" beside "JP¥".
+test('every amount in the workspace is written in the collector’s language, with the short sign only where it names one currency', async () => {
+  for (const [language, currency, minor, expected] of [['de-DE', 'EUR', 130000, '1.300,00 €'], ['en-GB', 'JPY', 1200000, '¥1,200,000'], ['en-GB', 'SEK', 1250000, 'SEK 12,500.00']]) {
+    const said = (amount) => formatMoney(amount, language, { narrow: true });
+    assert.equal(said({ currency, minor }).replace(/[\u00a0\u202f]/g, ' '), expected, 'the rule itself');
+    const background = await backgroundWithCoins('Taisei lot 88', 'Won coin');
+    const coin = storedLot(background, 'Taisei lot 88');
+    const placed = await background.send({ type: 'bid.place', lotId: coin.id, expectedRevision: coin.revision, activeBid: { amount: { currency, minor }, buyerPremiumBps: 1750 } });
+    assert.equal(placed.ok, true, placed.message);
+    const won = storedLot(background, 'Won coin');
+    assert.equal((await background.send({ type: 'lot.outcome.set', lotId: won.id, expectedRevision: won.revision, outcome: { status: 'won', hammer: { currency, minor }, terms: { buyerPremiumBps: 2000 } } })).ok, true);
+    const page = await mountWorkspace({ background, hash: '#watchlist', language });
+    const row = page.$('lot-list').querySelectorAll('.coin-row').find((item) => item.textContent.includes('Taisei lot 88'));
+    assert.equal(row.querySelector('.coin-row-amount').textContent, said({ currency, minor }), `${language} coin row`);
+    await page.openCoin('Taisei lot 88');
+    assert.match(page.$('bid-live').textContent, new RegExp(`^≈ ${said({ currency, minor: minor * 1.175 }).replace(/[$.]/g, '\\$&')} all-in`), `${language} Bid tab line`);
+    await page.navigate('#bids');
+    assert.equal(page.$('exposure-list').querySelector('.exposure-total').textContent, said({ currency, minor }), `${language} Active bids`);
+    await page.navigate('#history');
+    assert.match(page.$('history-list').textContent, new RegExp(`Lost|Won`));
+    assert.equal(page.$('collection-list').textContent.includes('$') && currency !== 'USD', false, 'no dollar sign where there is no dollar');
+    // The Compare dialog writes its figures by the same rule, and a won coin's total cost as History works it out.
+    await page.navigate('#watchlist');
+    page.$('lot-queue').value = 'all-coins'; await page.$('lot-queue').emit('change');
+    for (const box of page.$('lot-list').querySelectorAll('.compare-box')) { box.checked = true; await box.emit('change'); }
+    await page.click('open-comparison');
+    const text = page.$('comparison-grid').textContent;
+    assert.ok(text.includes(`Active maximum ${said({ currency, minor })}`), `${language} Compare: ${text}`);
+    assert.ok(text.includes(`Final hammer ${said({ currency, minor })}`), `${language} Compare final hammer`);
+    assert.ok(text.includes(`Total cost ${said({ currency, minor: minor * 1.2 })} (hammer + premium)`), `${language} Compare total cost`);
+  }
 });

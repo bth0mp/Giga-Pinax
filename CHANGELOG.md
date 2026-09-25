@@ -10,6 +10,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 - A want is checked against the bundled catalogue when you save it, so it is one a card can match. A reference the catalogue holds under another title is saved under that title, and the page says so: `RIC I Nero 306`, as CNG and Roma cite Julio-Claudian coins, becomes `RIC I² Nero 306`, and `RIC V.2 Probus 157` becomes `RIC V Probus 157`. One held in several volumes is offered as a choice, and one no card could ever match is refused with the reason. A found want keeps its reference, and a Bopearachchi want, which the bundle cannot check, is saved as written.
 - A want for a RIC number that OCRE splits by denomination matches both halves: the form's own example `RIC II Trajan 253` is on your want list under the `253 (aureus)` and the `253 (denarius)` card, while `RIC II Trajan 253 (aureus)` matches the aureus only.
+- Every amount in the workspace is written one way: in your browser's language, with the short sign only where it names one currency there. The coin list, the Bid tab's line and budget answer, **Active bids**, **History**, the collection totals, your saved comparables and **Compare** no longer mix `€1,300.00` with `1.300,00 €`, or `¥` with `JP¥`; a Swedish or Swiss amount keeps its code (`SEK 12,500.00`). History's money line keeps its columns, the code written once. **Compare** shows a won coin's total cost as History works it out.
 
 ### Fixed
 

@@ -20,7 +20,7 @@ import {
   mergeEventReminders, mergeLotSourceLinks, mergeRebasedFields, moneyInputText, offeredEventFromDraft,
   lotFieldForPath, outcomeDraftForLot, outcomeTermsFromForm, premiumInputText, bidBudgetAnswer, bidEstimateToSend, bidFeeFields, bidLiveLine, rememberedZone, reminderControlsForPrecision,
 } from '../extension/workspace-forms.js';
-import { parseMoney, parsePremiumPercent } from '../extension/core/money.js';
+import { formatMoney, parseMoney, parsePremiumPercent } from '../extension/core/money.js';
 import { LIMITS, projectCollection } from '../extension/core/records.js';
 import { eventTiming, lotComparables, lotsNeedingOutcome, reminderInstants } from '../extension/core/projections.js';
 
@@ -867,9 +867,9 @@ test('comparison selection is session-only, unique and bounded to four coins', (
   assert.deepEqual(comparisonSelectionAfterToggle(['a'], 'a'), []);
   assert.deepEqual(comparisonSelectionAfterToggle(['a', 'b', 'c', 'd'], 'e'), ['a', 'b', 'c', 'd']);
   const rows = comparisonRows([{ id: 'a', title: 'A', plannedBid: { amount: { currency: 'GBP', minor: 1000 }, buyerPremiumBps: 2000 }, costEstimate: { currency: 'GBP', shippingMinor: 200, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } }, { id: 'b', title: 'B', activeBid: { amount: { currency: 'EUR', minor: 2200 } }, costEstimate: { currency: 'GBP', shippingMinor: 300 } }], ['b', 'a']);
-  assert.deepEqual(rows.map((row) => [row.id, row.amountLabel]), [['b', 'Active maximum EUR 22.00'], ['a', 'Planned maximum GBP 10.00']]);
-  assert.deepEqual(rows.map((row) => row.estimateLabel), ['Fee estimate unavailable for EUR; recalculate', 'GBP fees: shipping 2.00 + fixed 0.00 + 0.00%']);
-  assert.deepEqual(rows.map((row) => row.totalLabel), ['Estimated total unknown; buyer premium not recorded', 'Estimated total GBP 14.00']);
+  assert.deepEqual(rows.map((row) => [row.id, row.amountLabel]), [['b', 'Active maximum €22.00'], ['a', 'Planned maximum £10.00']]);
+  assert.deepEqual(rows.map((row) => row.estimateLabel), ['Fee estimate unavailable for EUR; recalculate', 'Fees: shipping £2.00 + fixed £0.00 + 0.00%']);
+  assert.deepEqual(rows.map((row) => row.totalLabel), ['Estimated total unknown; buyer’s premium not recorded', 'Estimated total £14.00']);
 });
 
 test('comparison prioritizes terminal results over preserved plans and labels actual invoices separately', () => {
@@ -879,9 +879,9 @@ test('comparison prioritizes terminal results over preserved plans and labels ac
     { id: 'passed', title: 'Passed', outcome: { status: 'passed' }, plannedBid: { amount: { currency: 'EUR', minor: 7000 }, buyerPremiumBps: 1500 } },
     { id: 'open', title: 'Open', outcome: { status: 'open' }, plannedBid: { amount: { currency: 'CHF', minor: 6000 } }, costEstimate: { currency: 'CHF', shippingMinor: 0, paymentFeeBps: 0, paymentFeeMinor: 0, incrementMinor: 1, minimumBidMinor: 0 } },
   ], ['won', 'lost', 'passed', 'open']);
-  assert.deepEqual(rows.map((row) => row.amountLabel), ['Final hammer USD 80.00', 'Final hammer GBP 120.00', 'Final hammer not recorded', 'Planned maximum CHF 60.00']);
-  assert.deepEqual(rows.map((row) => row.actualTotalLabel), ['Actual invoice USD 95.00', '', '', '']);
-  assert.deepEqual(rows.map((row) => row.totalLabel), ['', '', '', 'Estimated total unknown; buyer premium not recorded']);
+  assert.deepEqual(rows.map((row) => row.amountLabel), ['Final hammer $80.00', 'Final hammer £120.00', 'Final hammer not recorded', `Planned maximum ${formatMoney({ currency: 'CHF', minor: 6000 }, 'en-US', { narrow: true })}`]);
+  assert.deepEqual(rows.map((row) => row.actualTotalLabel), ['Actual invoice $95.00', '', '', '']);
+  assert.deepEqual(rows.map((row) => row.totalLabel), ['', '', '', 'Estimated total unknown; buyer’s premium not recorded']);
 });
 
 test('comparison picker identifies same-reference coins by title and auction lot identity', () => {
@@ -1329,11 +1329,11 @@ test('the limited text boxes carry no maxlength of their own in the markup', () 
 test('the comparison names VAT on the premium and the platform fee in a coin’s fees', () => {
   const estimate = { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, premiumVatBps: 1900, platformFeeBps: 300, incrementMinor: 1, minimumBidMinor: 0 };
   const [row] = comparisonRows([{ id: 'a', title: 'A', outcome: { status: 'open' }, plannedBid: { amount: { currency: 'EUR', minor: 100000 }, buyerPremiumBps: 2500 }, costEstimate: estimate }], ['a']);
-  assert.equal(row.estimateLabel, 'EUR fees: shipping 15.00 + fixed 0.00 + 0.00% · VAT 19.00% on the premium · platform fee 3.00% on the hammer');
+  assert.equal(row.estimateLabel, 'Fees: shipping €15.00 + fixed €0.00 + 0.00% · VAT 19.00% on the premium · platform fee 3.00% on the hammer');
   // 1,000 + 250 premium + 47.50 VAT + 30 platform fee + 15 shipping.
-  assert.equal(row.totalLabel, 'Estimated total EUR 1342.50');
+  assert.equal(row.totalLabel, 'Estimated total €1,342.50');
   const [plain] = comparisonRows([{ id: 'b', title: 'B', outcome: { status: 'open' }, plannedBid: { amount: { currency: 'EUR', minor: 100000 } }, costEstimate: { ...estimate, premiumVatBps: 0, platformFeeBps: 0 } }], ['b']);
-  assert.equal(plain.estimateLabel, 'EUR fees: shipping 15.00 + fixed 0.00 + 0.00%');
+  assert.equal(plain.estimateLabel, 'Fees: shipping €15.00 + fixed €0.00 + 0.00%');
 });
 
 // N1: the collection totals what each won coin really cost, per currency, from the cost stored with its outcome; a
@@ -1457,13 +1457,12 @@ test('a won coin’s money line names its import VAT and totals it', () => {
   const [row] = comparisonRows([{ id: 'a', title: 'A', outcome: { status: 'open' }, plannedBid: { amount: eur(100000), buyerPremiumBps: 2500 },
     costEstimate: { currency: 'EUR', shippingMinor: 1500, paymentFeeBps: 0, paymentFeeMinor: 0, importVatBps: 500, incrementMinor: 1, minimumBidMinor: 0 } }], ['a']);
   assert.match(row.estimateLabel, /import VAT 5\.00% on hammer, premium and shipping/);
-  assert.equal(row.totalLabel, 'Estimated total EUR 1328.25');
+  assert.equal(row.totalLabel, 'Estimated total €1,328.25');
 });
 
 // Q-12: a History card reads as a ledger - what the coin is and where it was won, then the bid that decided it - and
 // the settled coins run newest first.
 test('a settled coin reads as a ledger line and the bid that decided it, newest first', async () => {
-  const { formatMoney } = await import('../extension/core/money.js');
   const eur = (minor) => ({ currency: 'EUR', minor });
   const lot = { reference: 'RIC II Trajan 253', auctionContext: { pageUrl: 'https://k.test/1', house: 'Künker', saleId: '341', lotNumber: '1234' },
     outcome: { status: 'won', hammer: eur(600000) }, bidHistory: [{ action: 'placed', amount: eur(650000) }, { action: 'settled-won', amount: eur(650000), buyerPremiumBps: 2500 }] };
@@ -1525,7 +1524,7 @@ test('a yen coin reads in whole yen in its form fields, the comparison and its m
   const estimate = { currency: 'JPY', shippingMinor: 3000, paymentFeeBps: 250, paymentFeeMinor: 500, incrementMinor: 1, minimumBidMinor: 0 };
   const [row] = comparisonRows([{ id: 'a', title: 'A', plannedBid: { amount: jpy(1200000), buyerPremiumBps: 1750 }, costEstimate: estimate }], ['a']);
   assert.deepEqual([row.amountLabel, row.estimateLabel, row.totalLabel],
-    ['Planned maximum JPY 1200000', 'JPY fees: shipping 3000 + fixed 500 + 2.50%', 'Estimated total JPY 1448825']);
+    ['Planned maximum ¥1,200,000', 'Fees: shipping ¥3,000 + fixed ¥500 + 2.50%', 'Estimated total ¥1,448,825']);
   const won = { outcome: { status: 'won', hammer: jpy(1200000), cost: { buyerPremiumBps: 1750, premium: jpy(210000), shipping: jpy(3000), total: jpy(1413000) } } };
   const line = wonCostLine(won, 'en-US');
   assert.deepEqual(line.cells.map((cell) => cell.figure), ['1,200,000', '210,000', '3,000', '1,413,000']);
