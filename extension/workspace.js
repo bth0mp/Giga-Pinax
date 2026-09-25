@@ -3,6 +3,7 @@ import { LIMITS } from './core/fields.js';
 import { CURRENCIES, formatMoney, minorDigits, parseMoney, parsePremiumPercent, plainDecimal } from './core/money.js';
 import { eventTiming, feeSheetOf, lotComparables, lotsNeedingOutcome, normalReference, projectCollection, reminderInstants } from './core/projections.js';
 import { zonePlace } from './core/reminders.js';
+import { WANT_GRADE_CHOICES, openWantsFor, wantBadgeText, wantFromForm } from './core/wantlist.js';
 import { buildUserInitiatedSearch } from './source-launchers.js';
 import { FEE_SHEET_FIELDS, followSessionMedians, formatMinorInput, sessionMedianAge } from './bid-tools.js';
 import { mountSourcesMenu } from './source-menu.js';
@@ -22,7 +23,7 @@ import {
   comparableSetOptions, comparableSummary, comparisonPickerLabel, comparisonProvenanceRows, comparisonRows, comparisonSelectionAfterToggle, eventWhen,
   evidenceRowsForQuery,
   decidingBidLine, filterWorkspaceLots, sameReference, historyLine, lotRowAmount, lotRowAmountLabel, lotStatusLabel, raisePlanLine, settledNewestFirst, lotStatusTone, moveDetailTab, reminderAtLabel, reminderLabel, routeFromHash, viewerTimeZone,
-  wonCostLine,
+  wantListRows, wonCostLine,
 } from './workspace-views.js';
 
 const WORKER_UNREACHABLE = "The extension's background worker could not be reached. Reload this page and check the record before retrying.";
@@ -70,7 +71,7 @@ async function initWorkspace() {
   };
   // Every currency select lists the currencies an amount may be recorded in, in money.js's order (G-23).
   for (const select of [$('evidence-currency'), $('evidence-form').elements.currency, $('bid-form').elements.currency,
-    $('outcome-form').elements.hammerCurrency, $('outcome-form').elements.invoiceCurrency]) {
+    $('outcome-form').elements.hammerCurrency, $('outcome-form').elements.invoiceCurrency, $('want-form').elements.currency]) {
     select.replaceChildren(...CURRENCIES.map((code) => { const option = text('option', code); option.value = code; return option; }));
   }
   const view = () => ({ locale: navigator.language });
@@ -214,7 +215,7 @@ async function initWorkspace() {
   // Feedback lives in the action bar of the form that was submitted (G-07): the lot, bid and outcome forms each say what
   // happened to them, with the figure, and the page's own status line keeps only page-level notices. A button - Open,
   // Undo - may follow the words.
-  const FORM_STATUS = { lot: 'lot-action-status', bid: 'bid-action-status', outcome: 'outcome-action-status' };
+  const FORM_STATUS = { lot: 'lot-action-status', bid: 'bid-action-status', outcome: 'outcome-action-status', want: 'want-form-status', wantlist: 'want-action-status' };
   const formStatus = (editor, message, { error = false, action = null } = {}) => {
     const line = $(FORM_STATUS[editor]);
     line.replaceChildren(document.createTextNode(message));
@@ -659,12 +660,22 @@ async function initWorkspace() {
     renderLots(); updateDirtyMarks();
     if (focus) $('selected-title').focus?.();
   }
+  // A coin whose reference names a type on the want list says so under its Reference, draft or saved (G-22): matched by the
+  // catalogue rules, as the popup's card is, and only for a reference that names one type.
+  function renderLotWantMatch() {
+    const line = $('lot-want-match');
+    const words = wantBadgeText(openWantsFor(snapshot.wants, $('lot-form').elements.reference.value), navigator.language);
+    const [badge, ...rest] = words ? words.split(' · ') : [];
+    line.replaceChildren(...(badge ? [text('span', badge, 'pill'), ...rest.map((part) => document.createTextNode(` · ${part}`))] : []));
+    line.hidden = !badge;
+  }
+  $('lot-form').addEventListener('input', renderLotWantMatch);
   function populateLotForm(lot) {
     const f = $('lot-form').elements;
     for (const [field, value] of Object.entries(lotFormValues(lot))) f[field].value = value;
     clearPageValues();
     $('provenance-editor').replaceChildren(); for (const entry of lot.provenanceNotes ?? []) appendProvenanceEditor(entry);
-    openFilledGroups(lot.id); refreshCounts($('lot-form'));
+    openFilledGroups(lot.id); refreshCounts($('lot-form')); renderLotWantMatch();
   }
   // The folded sections of the details form open themselves when they hold a value. For the coin already shown, a
   // section the collector opened stays open when the form follows committed data; another coin starts afresh.
@@ -778,7 +789,7 @@ async function initWorkspace() {
     $('comparison-dialog').showModal();
   });
   $('back-to-coins').addEventListener('click', () => { selection = { ...selection, mode: 'list' }; $('coin-workspace').dataset.mobileView = 'list'; $('lot-list').querySelector('[aria-selected="true"]')?.focus(); });
-  $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); $('provenance-editor').replaceChildren(); openFilledGroups(); updateDirtyMarks(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; $('lot-form').elements.title.focus(); });
+  $('new-lot').addEventListener('click', () => { if (!canLeaveSelectedEditors()) return; lotDraftId = null; lotInteractionGeneration += 1; clearSelectedEditors(); selection = { selectedLotId: null, mode: 'detail' }; lastLotUndo = null; $('undo-lot').hidden = true; $('delete-lot').hidden = true; $('lot-action-status').textContent = ''; $('lot-action-status').classList.remove('error'); $('coin-workspace').dataset.mobileView = 'detail'; $('coin-empty').hidden = true; $('coin-editor').hidden = false; $('lot-form').reset(); renderLotWantMatch(); $('provenance-editor').replaceChildren(); openFilledGroups(); updateDirtyMarks(); $('open-auction').removeAttribute('href'); $('research-reference').disabled = true; $('lot-form').elements.id.value = ''; beginEditor('lot', { id: null, revision: null, record: null }); $('bid-form').disabled = true; $('outcome-form').disabled = true; for (const tab of DETAIL_TABS.slice(1)) tabButtons.get(tab).disabled = true; showDetailTab('details'); $('selected-reference').textContent = 'New watchlist coin'; $('selected-title').textContent = 'Add coin'; $('selected-status').textContent = 'Draft'; $('lot-form').elements.title.focus(); });
   $('add-provenance').addEventListener('click', () => { appendProvenanceEditor(); $('lot-form').dispatchEvent(new Event('input', { bubbles: true })); });
   $('research-reference').addEventListener('click', () => { const reference = $('lot-form').elements.reference.value.trim(); if (reference) window.open(`popup.html?panel=1&reference=${encodeURIComponent(reference)}`, '_blank', 'noopener'); });
   $('new-group').addEventListener('click', () => { $('group-form').hidden = false; $('group-form').reset(); beginEditor('group', { id: null, revision: null, record: null }); $('group-form').elements.name.focus(); });
@@ -1454,6 +1465,8 @@ async function initWorkspace() {
     if (editor === 'lot') clearPageValues();
     if (editor === 'event') { eventReturnLot = null; lastEventPrecision = form.elements.precision.value; setEventZone(viewerTimeZone()); syncReminderChoices(); updatePrecision(); form.hidden = true; }
     if (editor === 'group') form.hidden = true;
+    if (editor === 'lot') renderLotWantMatch();
+    if (editor === 'want') { form.elements.id.value = ''; form.hidden = true; editingWant = null; }
   }
   async function loadRouteDraft() {
     if (!bridge) return;
@@ -1503,6 +1516,92 @@ async function initWorkspace() {
       announce('Captured research text loaded. Edit it before opening a source or saving evidence.');
     }
   }
+  // The Want list (G-22): references the collector is looking for, each with what it asks beyond its type, added, edited
+  // and removed here, and marked found by a won coin of its type. Nothing is searched for: a card, an upcoming lot or a
+  // captured lot of the type says so where it turns up.
+  let editingWant = null;
+  const wantForm = $('want-form');
+  wantForm.elements.minGrade.append(...WANT_GRADE_CHOICES.map(({ value, label }) => Object.assign(text('option', label), { value })));
+  const openWantForm = (want = null) => {
+    editingWant = want ? { id: want.id, revision: want.revision } : null;
+    wantForm.reset();
+    const f = wantForm.elements;
+    f.id.value = want?.id ?? '';
+    f.reference.value = want?.reference ?? '';
+    f.maxPrice.value = want?.maxPrice ? moneyInputText(want.maxPrice, navigator.language) : '';
+    f.currency.value = want?.maxPrice?.currency ?? (CURRENCIES.includes(snapshot.preferences?.currency) ? snapshot.preferences.currency : CURRENCIES[0]);
+    f.minGrade.value = want?.minGrade ?? '';
+    f.notes.value = want?.notes ?? '';
+    $('want-form-heading').textContent = want ? `Edit ${want.reference}` : 'Add a want';
+    clearFormStatus('want', 'wantlist');
+    wantForm.hidden = false;
+    dirtyEditors.delete('want'); updateDirtyMarks();
+    f.reference.focus();
+  };
+  const closeWantForm = () => { dirtyEditors.delete('want'); resetEditor('want'); updateDirtyMarks(); };
+  $('new-want').addEventListener('click', () => openWantForm());
+  $('cancel-want').addEventListener('click', closeWantForm);
+  wantForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const f = wantForm.elements;
+    const read = wantFromForm({ id: editingWant?.id, reference: f.reference.value, maxPrice: f.maxPrice.value, currency: f.currency.value, minGrade: f.minGrade.value, notes: f.notes.value },
+      { wants: snapshot.wants, locale: navigator.language });
+    if (!read.ok) { formStatus('want', read.message, { error: true }); f[read.field]?.focus?.(); return; }
+    const reference = read.value.reference;
+    void send({ type: 'want.save', requestId: requestId(), expectedRevision: editingWant?.revision ?? null, want: read.value }, 'want').then((reply) => {
+      if (reply?.ok && !reply.editorPreserved) formStatus('wantlist', `Want saved · ${reference}`);
+    });
+  });
+  const wantAction = (label, run, className = 'quiet') => {
+    const button = text('button', label, className); button.type = 'button'; button.dataset.needsRuntime = ''; button.disabled = !bridge;
+    button.addEventListener('click', run);
+    return button;
+  };
+  const openCoinLink = (lot) => {
+    const link = text('a', lot.title); link.href = `#watchlist?lot=${lot.id}`;
+    link.addEventListener('click', () => { routeChangeFromNav = false; selectLot(lot.id, { focus: false }); });
+    return link;
+  };
+  function renderWants() {
+    // The form of a want another view removed closes, and says why.
+    if (editingWant && !(snapshot.wants ?? []).some(({ id }) => id === editingWant.id)) {
+      closeWantForm();
+      formStatus('wantlist', 'This want was removed in another view.');
+    }
+    const list = $('want-list'); list.replaceChildren();
+    const rows = wantListRows(snapshot, navigator.language);
+    if (!rows.length) {
+      list.append(text('p', 'No wants yet. Add a reference you are looking for, such as RIC II Trajan 253: a card, an upcoming acsearch lot or a captured lot of that type then says “On your want list”. Nothing is searched for you, and nothing leaves this device.', 'empty-row'));
+      return;
+    }
+    for (const { want, terms, found, foundStatus, wonCoins } of rows) {
+      const card = text('article', '', 'record want-record'); card.dataset.wantId = want.id;
+      card.append(text('h3', want.reference));
+      if (terms) card.append(text('p', terms, 'want-terms'));
+      if (want.notes) card.append(text('p', want.notes, 'want-notes'));
+      const actions = text('div', '', 'actions');
+      if (want.foundLotId) {
+        const line = text('p', '', 'want-found'); line.append(text('span', 'Found', 'pill'), document.createTextNode(` ${dayText(want.foundAt)} · `));
+        line.append(found ? openCoinLink(found) : document.createTextNode('the coin is no longer saved here'));
+        if (found) line.append(document.createTextNode(foundStatus === 'won' ? ' · won' : ` · coin now ${({ open: 'open', lost: 'lost', passed: 'passed' })[foundStatus] ?? foundStatus}`));
+        card.append(line);
+        actions.append(wantAction('Want again', () => void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: null }, 'wantlist')
+          .then((reply) => { if (reply?.ok) formStatus('wantlist', `Wanted again · ${want.reference}`); })));
+      } else {
+        for (const lot of wonCoins) {
+          actions.append(wantAction(`Mark found: ${lot.title}`, () => void send({ type: 'want.found', requestId: requestId(), wantId: want.id, expectedRevision: want.revision, lotId: lot.id }, 'wantlist')
+            .then((reply) => { if (reply?.ok) formStatus('wantlist', `Found · ${want.reference} · ${lot.title}`); }), 'secondary'));
+        }
+      }
+      actions.append(wantAction('Edit', () => openWantForm(want)), wantAction('Remove', () => {
+        if (!confirm(`Remove “${want.reference}” from your want list?`)) return;
+        void send({ type: 'want.delete', requestId: requestId(), wantId: want.id, expectedRevision: want.revision }, 'wantlist')
+          .then((reply) => { if (reply?.ok) formStatus('wantlist', `Removed from your want list · ${want.reference}`); });
+      }, 'danger quiet'));
+      card.append(actions);
+      list.append(card);
+    }
+  }
   // An auction or group form left open follows committed data until the collector edits it, and
   // following it is not editing: the edit version stays where the collector left it.
   function renderOpenRecordForms() {
@@ -1518,7 +1617,7 @@ async function initWorkspace() {
   // The popup's session median, followed while this page is open; nothing of it is written anywhere.
   let sessionMedians = [];
   followSessionMedians((found) => { sessionMedians = found; renderBidEvidence(); }, (globalThis.browser ?? globalThis.chrome)?.storage);
-  function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderOpenRecordForms(); updateDirtyMarks(); }
+  function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderWants(); renderLotWantMatch(); renderOpenRecordForms(); updateDirtyMarks(); }
   // On a wide screen the detail panel is never an empty "Select a coin": the coin the queue puts first is opened on
   // arrival - one needing its outcome before any other (G-06, G-20). The phone's list-then-detail switch is untouched.
   const wideScreen = () => { try { return Boolean(globalThis.matchMedia?.('(min-width: 761px)').matches); } catch { return false; } };

@@ -7,6 +7,7 @@ import { costFees, eventTiming, feeSheetOf, lotCost, projectExposure, shownCostT
 import { sameZone, zonePlace } from './core/reminders.js';
 import { moneyInputText } from './workspace-forms.js';
 import { parseReference } from './lookup.js';
+import { wantTermsText, wonCoinsFor } from './core/wantlist.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
  * @typedef {import('./core/types.js').AuctionEvent} AuctionEvent
@@ -16,7 +17,7 @@ import { parseReference } from './lookup.js';
  */
 /** @typedef {{ selectedLotId: string | null, mode: 'list' | 'detail' }} Selection */
 
-export const ROUTES = Object.freeze(['search', 'watchlist', 'auctions', 'bids', 'history']);
+export const ROUTES = Object.freeze(['search', 'watchlist', 'auctions', 'bids', 'history', 'wants']);
 
 /**
  * @param {*} hash
@@ -315,6 +316,27 @@ export function sameReference(left, right) {
   const one = read(left); const other = read(right);
   if (!one || !other) return false;
   return ['catalogue', 'volume', 'section', 'number'].every((key) => String(one[key] ?? '') === String(other[key] ?? ''));
+}
+
+/**
+ * The Want list page's rows (G-22): the wants still wanted first, then the found ones, each in the order it was added,
+ * with what it asks beyond its type, the coin that found it (null when that coin is no longer saved here) and where that
+ * coin's outcome now stands - an outcome corrected away from won means the want is due again - and the won
+ * coins of its type it could be marked found by.
+ * @param {Partial<Snapshot> | null | undefined} snapshot
+ * @param {string} [locale]
+ * @returns {Array<{ want: import('./core/types.js').Want, terms: string, found: Lot | null, foundStatus: string | null, wonCoins: Lot[] }>}
+ */
+export function wantListRows(snapshot, locale = 'en-US') {
+  const lots = snapshot?.lots ?? [];
+  const rows = (snapshot?.wants ?? []).map((want) => ({
+    want,
+    terms: wantTermsText(want, locale),
+    found: want.foundLotId ? lots.find(({ id }) => id === want.foundLotId) ?? null : null,
+    foundStatus: want.foundLotId ? lots.find(({ id }) => id === want.foundLotId)?.outcome?.status ?? null : null,
+    wonCoins: want.foundLotId ? [] : wonCoinsFor(want, lots),
+  }));
+  return [...rows.filter(({ want }) => !want.foundLotId), ...rows.filter(({ want }) => want.foundLotId)];
 }
 
 /**

@@ -140,6 +140,24 @@ const OUTCOME_COLUMNS = [
   ['to', ({ item }) => item.to],
 ];
 
+// The want list (G-22): each want as the collector wrote it, and the coin it found once one was won. The most they would
+// pay is one amount in its own currency, never converted.
+const WANT_GRADE_NAMES = { F: 'Fine', VF: 'Very Fine', EF: 'Extremely Fine', AU: 'About Uncirculated' };
+const WANT_COLUMNS = [
+  ['want_id', ({ want }) => want.id],
+  ['reference', ({ want }) => want.reference],
+  ['max_price', ({ want }) => decimalAmount(want.maxPrice)],
+  ['max_price_currency', ({ want }) => currencyOf(want.maxPrice)],
+  ['min_grade', ({ want }) => WANT_GRADE_NAMES[want.minGrade] ?? ''],
+  ['status', ({ want }) => (want.foundLotId ? 'Found' : 'Wanted')],
+  ['found_lot_id', ({ want }) => want.foundLotId],
+  ['found_lot_title', ({ lot }) => lot?.title],
+  ['found_at', ({ want }) => want.foundAt],
+  ['notes', ({ want }) => want.notes],
+  ['created_at', ({ want }) => want.createdAt],
+  ['updated_at', ({ want }) => want.updatedAt],
+];
+
 const list = (value) => (Array.isArray(value) ? value : []);
 
 // The tables in the order the Settings page offers them, each with the label it is offered under.
@@ -148,11 +166,12 @@ export const CSV_TABLES = Object.freeze([
   Object.freeze({ key: 'collection', label: 'Collection entries' }),
   Object.freeze({ key: 'bids', label: 'Bid history' }),
   Object.freeze({ key: 'outcomes', label: 'Outcome history' }),
+  Object.freeze({ key: 'wants', label: 'Want list' }),
 ]);
 
 /**
  * @param {Partial<Snapshot> | null | undefined} snapshot
- * @returns {{ lots: string, collection: string, bids: string, outcomes: string }}
+ * @returns {{ lots: string, collection: string, bids: string, outcomes: string, wants: string }}
  */
 export function csvFiles(snapshot) {
   const lots = list(snapshot?.lots);
@@ -164,5 +183,6 @@ export function csvFiles(snapshot) {
     collection: csvText(COLLECTION_COLUMNS, list(snapshot?.collectionEntries).map((entry) => ({ entry, lot: lotsById.get(entry.lotId) }))),
     bids: csvText(BID_COLUMNS, history('bidHistory')),
     outcomes: csvText(OUTCOME_COLUMNS, history('outcomeHistory')),
+    wants: csvText(WANT_COLUMNS, list(snapshot?.wants).map((want) => ({ want, lot: lotsById.get(want.foundLotId) }))),
   };
 }

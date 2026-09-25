@@ -1099,8 +1099,15 @@ const cssDeclarations = (selector, media = '') => workspaceCssRules()
   .filter((rule) => rule.selector === selector && rule.media === media).map((rule) => rule.declarations).join(';');
 
 // W-06: at phone width the nav wraps onto a second line instead of hiding History and Settings off screen.
+// Fix round (r1-review Important 2): read the rule that wins, the header's own nav rule in the phone block, not only the plain one it overrides.
 test('the workspace nav wraps at phone width, so no route is scrolled out of sight', () => {
-  assert.match(cssDeclarations('.workspace-nav', '@media(max-width:760px)'), /flex-wrap:wrap/);
+  const phone = '@media(max-width:760px)';
+  const nav = `${cssDeclarations('.workspace-nav', phone)};${cssDeclarations('.workspace-header .workspace-nav', phone)}`;
+  const last = (property) => [...nav.matchAll(new RegExp(`(?:^|;)\\s*${property}:([^;]+)`, 'g'))].at(-1)?.[1].trim();
+  assert.equal(last('flex-wrap'), 'wrap');
+  assert.notEqual(last('overflow-x'), 'auto', 'a route is never hidden in a scrolled row');
+  // The page's notice sits under the header whatever its height, one row of routes or three.
+  assert.match(cssDeclarations('#workspace-status', phone), /top:auto/);
 });
 
 // W-05: a danger button is red on a transparent face, never red text on the accent's purple (1.46:1).

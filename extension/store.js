@@ -3,7 +3,7 @@ import {
   ENTRY_EDITABLE_FIELDS, LIMITS, SCHEMA_VERSION, createEmptySnapshot, foldQuarantine, followOutcome, healCollectionEntries,
   migrateSnapshot, quarantineEntryId,
   quarantineInvalidRecords, restartUnusableRevisions, setOutcome, validateDraftPayload,
-  validateEventLocalTimes, validateSnapshot,
+  validateEventLocalTimes, validateSnapshot, validateWant,
 } from './core/records.js';
 import { resolveZonedDateTime } from './core/reminders.js';
 import { previewImport, validateBackup } from './core/backup.js';
@@ -50,6 +50,7 @@ export const COMMAND_TYPES = new Set([
   'draft.save', 'draft.get', 'draft.consume',
   'alert.ack', 'alert.snooze', 'alert.markAllRead',
   'backup.import', 'quarantine.restore',
+  'want.save', 'want.delete', 'want.found',
 ]);
 const SCHEDULE_CHANGING_COMMANDS = new Set([
   'event.save', 'event.delete', 'lot.save', 'lot.delete', 'lot.restore', 'lot.outcome.set', 'backup.import',
@@ -65,6 +66,18 @@ const OVER_THE_BOUND = new Map([
 ]);
 // What any other command says when its own result, before any reminder it schedules, does not fit.
 const THIS_CHANGE_OVER_THE_BOUND = 'This change would exceed the 5 MiB local storage bound. Remove records you no longer need, then try again.';
+
+// The want a command names at the revision it was sent against, refused in a sentence of its own: "This want changed in another view."
+/**
+ * @param {import('./core/types.js').Want[]} wants
+ * @param {*} id
+ * @param {*} expectedRevision
+ * @returns {Result<{ index: number, record: import('./core/types.js').Want }>}
+ */
+function findWant(wants, id, expectedRevision) {
+  const found = findRecord(wants, id, expectedRevision, 'want');
+  return found.ok ? found : fail(found.error.code, found.error.message.replace(/^want\b/, 'This want'), found.error.path);
+}
 
 // Two amounts, or two texts, that are the same whatever order an amount's keys were written in; absent is null.
 function sameValue(left, right) {
@@ -738,6 +751,70 @@ function mutation(snapshot, command, context) {
       };
       break;
     }
+    // The want list (G-22). A want is what the collector wrote - the reference, and the notes, most they would pay and
+    // lowest grade they would take - and nothing else: whether it was found is `want.found`'s alone, and kept through an
+    // edit. Whether a catalogue's rules read the reference is the page's to ask as it is written; the store holds it to
+    // its shape. The list is written with its first want and goes with its last, so a collector who never keeps one has
+    // a root exactly as before.
+    case 'want.save': {
+      const draft = command.want;
+      if (!draft || typeof draft !== 'object' || Array.isArray(draft)) return fail('validation', 'A want is required.', 'want');
+      // A field left out, null or blank is one the collector did not fill in.
+      const given = (key) => own(draft, key) && draft[key] !== null && !(typeof draft[key] === 'string' && !draft[key].trim());
+      const fields = {
+        reference: typeof draft.reference === 'string' ? draft.reference.trim() : draft.reference,
+        ...Object.fromEntries(['notes', 'maxPrice', 'minGrade'].filter(given).map((key) => [key, clone(draft[key])])),
+      };
+      const wants = next.wants ?? [];
+      if (command.expectedRevision === null) {
+        if (own(draft, 'id')) return fail('validation', 'New wants cannot supply a durable ID.', 'want.id');
+        value = baseRecord(fields, context);
+        wants.push(value);
+      } else {
+        const found = findWant(wants, draft.id, command.expectedRevision);
+        if (!found.ok) return found;
+        const { id, dataClass, createdAt, foundLotId, foundAt } = found.value.record;
+        value = { id, revision: found.value.record.revision + 1, dataClass, createdAt, updatedAt: now, ...fields,
+          ...(foundLotId ? { foundLotId, foundAt } : {}) };
+        wants[found.value.index] = value;
+      }
+      const valid = validateWant(value);
+      if (!valid.ok) return fail('validation', valid.error.message, valid.error.path);
+      next.wants = wants;
+      break;
+    }
+    case 'want.delete': {
+      const wants = next.wants ?? [];
+      const found = findWant(wants, command.wantId, command.expectedRevision);
+      if (!found.ok) return found;
+      value = found.value.record;
+      wants.splice(found.value.index, 1);
+      if (!wants.length) delete next.wants;
+      break;
+    }
+    // Found: the won coin that answered the want, and when; `lotId: null` takes it back. Only a coin won here can be named,
+    // and the page offers only one whose reference the catalogue rules read as the want's.
+    case 'want.found': {
+      const found = findWant(next.wants ?? [], command.wantId, command.expectedRevision);
+      if (!found.ok) return found;
+      if (command.lotId !== null && typeof command.lotId !== 'string') return fail('validation', 'A coin is required.', 'lotId');
+      const want = found.value.record;
+      if (command.lotId === null) {
+        if (!own(want, 'foundLotId')) return fail('validation', 'This want is not marked found.', 'lotId');
+        delete want.foundLotId;
+        delete want.foundAt;
+      } else {
+        const lot = next.lots.find(({ id }) => id === command.lotId);
+        if (!lot) return fail('validation', 'That coin is no longer saved.', 'lotId');
+        if (lot.outcome.status !== 'won') return fail('validation', 'Only a coin you won can be what a want found.', 'lotId');
+        want.foundLotId = lot.id;
+        want.foundAt = now;
+      }
+      want.revision += 1;
+      want.updatedAt = now;
+      value = want;
+      break;
+    }
     case 'backup.import': {
       if (command.expectedRevision !== snapshot.revision) {
         return fail('conflict', 'Local data changed after the import preview.', 'expectedRevision');
@@ -764,7 +841,7 @@ function mutation(snapshot, command, context) {
       const rootKeys = [
         'schemaVersion', 'revision', 'updatedAt', 'preferences', 'scheduler', 'quarantine',
         'lots', 'auctionEvents', 'alternativeGroups', 'evidence', 'collectionEntries',
-        'drafts', 'alerts', 'recentCommands',
+        'drafts', 'alerts', 'recentCommands', 'wants',
       ];
       for (const key of Object.keys(next)) delete next[key];
       for (const key of rootKeys) {

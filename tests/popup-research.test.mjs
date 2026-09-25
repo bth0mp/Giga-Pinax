@@ -13,6 +13,7 @@ import * as companion from '../extension/companion-popup.js';
 import * as localCatalogue from '../extension/local-catalogue.js';
 import * as coinArchivesPrices from '../extension/coinarchives-prices.js';
 import * as money from '../extension/core/money.js';
+import * as wantlist from '../extension/core/wantlist.js';
 import { parseHtml, runPage } from './helpers/dom.mjs';
 
 // No test here reaches the network. The popup's own lookup goes online after a local miss with whatever fetch the module finds, and in this process
@@ -135,7 +136,7 @@ async function loadPopup({ permissionRequest, priceFetch, coinArchivesFetch = as
   window.open = () => {};
   window.close = () => {};
   const sandbox = {
-    ...money, ...lookup, ...prices, ...preferences, ...catalogues, ...selection, ...lot, ...companion, ...localCatalogue, ...coinArchivesPrices,
+    ...money, ...lookup, ...prices, ...preferences, ...catalogues, ...selection, ...lot, ...companion, ...localCatalogue, ...coinArchivesPrices, ...wantlist,
     createLocalCatalogue: () => localProvider,
     fetchPrices: priceFetch,
     fetchCoinArchivesPrices: coinArchivesFetch,
@@ -2736,6 +2737,86 @@ test('a dotted-letter lot row searches no prices and shows no plain term until a
   assert.deepEqual(fetched, []);
   assert.equal(popup.element('price-search-term').textContent, '');
   assert.equal(popup.element('lot-list').children[0].children[0].textContent, 'RIC IV 27 b. · Philip I');
+});
+
+// --- The want list (G-22) --------------------------------------------------------------------------------------------------------------------------
+
+// The other half of the page hands the want list over; an Upcoming row citing the card's type says "On your want list" beside its Watch, and only once
+// a card of one type has been verified for the research - never for a reference still without its card.
+const WANTS = [{ id: '11111111-1111-4111-8111-111111111111', revision: 0, dataClass: 'collector', createdAt: '2026-09-25T12:00:00.000Z',
+  updatedAt: '2026-09-25T12:00:00.000Z', reference: 'Price 23', maxPrice: { currency: 'USD', minor: 150000 }, minGrade: 'VF' }];
+const wantedRows = (popup) => popup.element('upcoming-list').children
+  .filter((row) => row.children[0].children.at(-1)?.textContent === 'On your want list')
+  .map((row) => row.children[0].children[1].textContent);
+
+test('an upcoming lot citing a wanted type carries the want-list badge beside its one-step Watch', async () => {
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming,
+    lookupTypeImpl: async () => ({ status: 'ok', card: PRICE_CARD }) });
+  await popup.window.emit('giga-pinax-wants', { detail: WANTS });
+  popup.element('quick-reference').value = 'Price 23';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  assert.deepEqual(wantedRows(popup), ['Roma Numismatics, E-Sale 200, Lot u1', 'Roma Numismatics, E-Sale 200, Lot u3']);
+  const [row] = popup.element('upcoming-list').children;
+  const badge = row.children[0].children.at(-1);
+  const watch = row.children[1];
+  assert.equal(badge.className, 'pill');
+  assert.equal(badge.title, 'On your want list · up to $1,500.00 · VF or better');
+  assert.equal(watch.textContent, 'Watch');
+  assert.equal(watch['aria-label'], 'Watch Roma Numismatics, E-Sale 200, Lot u1, sale on 2099-10-12. On your want list · up to $1,500.00 · VF or better');
+  // One click saves it through the one-step save, as any row's Watch does.
+  popup.dispatched.length = 0;
+  await watch.emit('click');
+  assert.deepEqual(popup.dispatched.map(({ type, detail }) => [type, detail.reference, detail.pageUrl]),
+    [['giga-pinax-watch', 'Price 23', 'https://www.acsearch.info/search.html?id=u1']]);
+  // A row that does not cite the type (shown with the citation filter off) carries no badge.
+  popup.element('citing-filter').checked = false;
+  await popup.element('citing-filter').emit('change');
+  assert.equal(popup.element('upcoming-list').children.length, 3);
+  assert.deepEqual(wantedRows(popup), ['Roma Numismatics, E-Sale 200, Lot u1', 'Roma Numismatics, E-Sale 200, Lot u3']);
+  // The want marked found, or taken off the list, takes the badge with it at once.
+  await popup.window.emit('giga-pinax-wants', { detail: [{ ...WANTS[0], foundLotId: '22222222-2222-4222-8222-222222222222', foundAt: '2026-09-26T12:00:00.000Z' }] });
+  assert.deepEqual(wantedRows(popup), []);
+  await popup.window.emit('giga-pinax-wants', { detail: WANTS });
+  assert.equal(wantedRows(popup).length, 2, 'and brings it back');
+});
+
+test('no Upcoming row is marked while the research has no card of one type, nor for a type not wanted', async () => {
+  const unresolved = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming,
+    lookupTypeImpl: async () => ({ status: 'none', corpus: 'pella', query: 'Price 23' }) });
+  await unresolved.window.emit('giga-pinax-wants', { detail: WANTS });
+  unresolved.element('quick-reference').value = 'Price 23';
+  await unresolved.element('reference-form').emit('submit');
+  await settle();
+  assert.equal(unresolved.element('upcoming-list').children.length, 2);
+  assert.deepEqual(wantedRows(unresolved), [], 'the reference never became a card');
+  const other = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => withUpcoming,
+    lookupTypeImpl: async () => ({ status: 'ok', card: PRICE_CARD }) });
+  await other.window.emit('giga-pinax-wants', { detail: [{ ...WANTS[0], reference: 'Price 3014' }] });
+  other.element('quick-reference').value = 'Price 23';
+  await other.element('reference-form').emit('submit');
+  await settle();
+  assert.deepEqual(wantedRows(other), []);
+  // The page's own markup keeps the badge line for the card, hidden until a card of a wanted type is shown.
+  const markup = parseHtml(readFileSync(new URL('../extension/popup.html', import.meta.url), 'utf8'));
+  assert.equal(markup.getElementById('companion-want-line')?.hidden, true);
+});
+
+// Fix round (r1-review Important 1): the card hands the other half its reading, the one the Upcoming rows are matched with.
+test('a card hands over its reading with its reference, a Bopearachchi card its king and series', async () => {
+  const card = { id: 'bop.9c', corpus: 'bigr', label: 'Bactrian and Indo-Greek Coinage Euthydemus I 9C', bop: { series: '9C', king: 'Euthydemus I', citation: '9C' }, obverse: {}, reverse: {} };
+  const popup = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale, lookupTypeImpl: async () => ({ status: 'ok', card }) });
+  popup.element('quick-reference').value = 'Bop Euthydemus I 9C';
+  await popup.element('reference-form').emit('submit');
+  await settle();
+  const detail = popup.dispatched.filter(({ type }) => type === 'giga-pinax-card').at(-1).detail;
+  assert.deepEqual({ ...detail.reading }, { catalogue: 'Bop', number: '9C', volume: '', section: 'Euthydemus I' });
+  assert.equal(Object.isFrozen(detail.reading), true);
+  const price = await loadPopup({ permissionRequest: async () => true, priceFetch: async () => oneSale, lookupTypeImpl: async () => ({ status: 'ok', card: PRICE_CARD }) });
+  price.element('quick-reference').value = 'Price 23';
+  await price.element('reference-form').emit('submit');
+  await settle();
+  assert.deepEqual({ ...price.dispatched.filter(({ type }) => type === 'giga-pinax-card').at(-1).detail.reading }, { catalogue: 'Price', number: '23', volume: '', section: '' });
 });
 
 // The median kept for the workspace is Money the workspace formats through money.js's table, so its minor units come from

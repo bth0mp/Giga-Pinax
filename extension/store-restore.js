@@ -103,6 +103,8 @@ function readyToRestore(snapshot, entry) {
   }
   const candidate = validateQuarantinedRecord(entry.collection, entry.record);
   if (!candidate.ok) return fail('validation', candidate.error.message, candidate.error.path);
+  // The want list is written with its first want, so a want set aside from the last list there was comes back into a new one.
+  if (entry.collection === 'wants' && snapshot.wants === undefined) snapshot.wants = [];
   const home = snapshot[entry.collection];
   if (!Array.isArray(home)) {
     return fail('validation', 'This entry is not a record that can be put back.', 'entryId');

@@ -47,7 +47,7 @@ Giga Pinax does not place, change or cancel bids, make purchases, offer investme
 **Single purpose:** Help ancient-coin collectors research catalogue references and sale prices, then organize auction and collection work in a local workspace.
 
 - `contextMenus`: starts user-invoked highlighted-text research or an editable current-lot draft.
-- `storage`: stores preferences, watchlists, bid plans, reminders (with the browser's time-zone name, such as `Europe/London`, so a sale day's reminders go off on the collector's clock), notes, provenance, measurements, external photo links, fee estimates, comparable sales and collection history locally.
+- `storage`: stores preferences, watchlists, bid plans, reminders (with the browser's time-zone name, such as `Europe/London`, so a sale day's reminders go off on the collector's clock), notes, provenance, measurements, external photo links, fee estimates, comparable sales, collection history and the want list locally.
 - `activeTab` and `scripting`: temporarily extract the current page after an explicit collector action so its structured data, metadata, visible text and URL can be reviewed before research or saving. A page the extension may not read, such as a browser settings page or a local file, is refused rather than captured.
 - `alarms`: schedules local reminder due checks.
 - `sidePanel`: opens the research workspace in Brave/Chrome's side panel.

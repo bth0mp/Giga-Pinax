@@ -84,7 +84,7 @@ function fullSnapshot() {
 
 test('csvFiles names one file per table', () => {
   const files = csvFiles(fullSnapshot());
-  assert.deepEqual(Object.keys(files), ['lots', 'collection', 'bids', 'outcomes']);
+  assert.deepEqual(Object.keys(files), ['lots', 'collection', 'bids', 'outcomes', 'wants']);
   assert.deepEqual(CSV_TABLES.map(({ key }) => key), Object.keys(files));
   for (const text of Object.values(files)) assert.equal(typeof text, 'string');
 });

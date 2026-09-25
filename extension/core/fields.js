@@ -18,6 +18,8 @@ export const LIMITS = Object.freeze({
   alternativeGroups: 1000,
   evidenceObservations: 10000,
   collectionEntries: 1000,
+  // The want list (G-22): references the collector is looking for.
+  wants: 1000,
   drafts: 20,
   alerts: 10000,
   recentCommands: 200,
@@ -46,6 +48,10 @@ export const LIMITS = Object.freeze({
   // of them, more than any store will ever see, and still nowhere near the ceiling.
   usableRevision: 2 ** 52 - 2 ** 32,
 });
+
+// The lowest grade a want may ask for (G-22), on the trade's English scale, lowest first: Fine, Very Fine, Extremely Fine
+// and About Uncirculated. A want asking for one takes that grade or better; nothing is read from a lot's text against it.
+export const WANT_GRADES = Object.freeze(['F', 'VF', 'EF', 'AU']);
 
 /** @type {(value: any, key: PropertyKey) => boolean} */
 const OWN = (value, key) => Object.prototype.hasOwnProperty.call(value, key);

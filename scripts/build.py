@@ -46,6 +46,7 @@ ASSET_PATHS = (
     "core/reminders.js",
     "core/types.js",
     "core/validate.js",
+    "core/wantlist.js",
     "current-lot.js",
     "design-tokens.css",
     "popup.html",
