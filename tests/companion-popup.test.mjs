@@ -410,8 +410,12 @@ test('a companion start-up that cannot reach storage leaves its save buttons dis
 test('a companion start-up over unreadable records points at the recovery notice', async () => {
   const unreadable = { ok: false, code: 'storage', outcome: 'not-committed', message: 'Stored data is invalid: Expected an object.', reason: 'unreadable' };
   const page = await loadCompanion({ sendMessage: async () => unreadable });
-  assert.equal(page.element('storage-note').textContent, 'Your records can’t be read. The notice at the top of this window has the ways out.');
+  // The recovery notice carries the ways out (X-02); where a save would be, the popup says why it cannot (X-12), never a raw sentence.
+  const said = 'Your records can’t be read, so nothing can be saved here.';
   assert.equal(page.element('companion-save-watchlist').disabled, true);
+  assert.equal(page.element('companion-empty-text').textContent, said);
+  page.card({ title: 'Nero denarius', reference: 'RIC 306' });
+  assert.equal(lineParts(page.element('companion-save-hint')), `${said} · [Open Settings]`);
 });
 
 const WORKING_SNAPSHOT = { ok: true, value: { lots: [], auctionEvents: [], alerts: [], preferences: { currency: 'USD', revision: 1 } } };
