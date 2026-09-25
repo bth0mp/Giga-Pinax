@@ -844,7 +844,34 @@ async function pickPortrait(reference, feed) {
   return pickRic(await feed(ricSearch(anyRuler, [facetName(reference.section)])), anyRuler);
 }
 
-export async function lookupType(given, options = {}) {
+// A RIC number a lot row carries with a dotted letter behind it ("RIC 27 b.", lot.js DOTTED_LETTER) is read both ways: the plain number, and the
+// lettered type. Where the lettered reading finds nothing of its own — no such type, or only other rulers' — the plain answer stands exactly as it
+// always did ("Nero. RIC 306 f." is still Nero 306). Where it does, the text may mean either, so both are offered and neither is opened. A failed
+// or too-broad plain lookup is returned as it is. An OCRE id the dealer linked settles it, and nothing else carries the letter.
+const dottedLetterOf = (reference) => (reference?.catalogue === 'RIC' && typeof reference.dottedLetter === 'string' && /^[a-l]$/.test(reference.dottedLetter)
+  && /^\d+$/.test(String(reference.number ?? '')) && typeof reference.id !== 'string' ? reference.dottedLetter : '');
+const readingHits = (result) => {
+  if (result?.status === 'ok' && result.card?.id) return [{ id: result.card.id, title: result.card.label, ...(result.card.source === 'local' ? { source: 'local' } : {}) }];
+  return result?.status === 'candidates' && !result.personMismatch ? result.candidates ?? [] : [];
+};
+export async function eitherReading(reference, look) {
+  const letter = dottedLetterOf(reference);
+  const { dottedLetter, ...plain } = reference ?? {};
+  if (!letter) return look(dottedLetter === undefined ? reference : plain);
+  const [one, other] = await Promise.all([look(plain), look({ ...plain, number: `${plain.number}${letter}`, range: undefined })]);
+  const lettered = readingHits(other);
+  // A plain number the bundle does not hold, asked locally only, comes back as "online-required": it is still no answer beside the lettered one.
+  const missing = one?.status === 'none' || (one?.status === 'online-required' && one.localStatus === 'none');
+  if (lettered.length === 0 || !(missing || ['ok', 'candidates'].includes(one?.status))) return one;
+  const offered = [...readingHits(one), ...lettered].filter((entry, index, all) => all.findIndex(({ id }) => id === entry.id) === index);
+  return { status: 'candidates', candidates: offered, partial: true, corpus: one.corpus ?? other.corpus ?? 'ocre', query: one.query ?? other.query ?? '' };
+}
+
+export function lookupType(given, options = {}) {
+  return eitherReading(given, (reference) => lookupOneType(reference, options));
+}
+
+async function lookupOneType(given, options = {}) {
   // A mint written by the name on the map today ("Trier") is RIC's own Latin section ("Treveri"). Every lookup arrives here — typed, guided or from a
   // lot row — so the name is read once, where the section is used, rather than in the parse the guided fields never run. The caller's own object is
   // left as it was.

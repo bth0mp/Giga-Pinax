@@ -1622,3 +1622,34 @@ test('rpcUrl reads a remark behind a comma after "(temporary)"', () => {
   assert.equal(rpcUrl('RPC IV.2 online 1234, (temporary)'), 'https://rpc.ashmus.ox.ac.uk/coins/4/1234');
   assert.equal(rpcUrl('RPC IV.2 online 1234 (temporary), (this coin)'), null);
 });
+
+// Loop P2 fix round 2: a dotted letter ("RIC 27 b.") is read both ways, and only a lettered reading of its own makes it a choice.
+test('lookupType reads a dotted RIC letter both ways: both offered where the lettered type answers, the plain answer untouched where it does not', async () => {
+  const card = (id, label) => ({ status: 'ok', card: { id, label, source: 'local' } });
+  const provider = (answers) => {
+    const asked = [];
+    return { asked, lookupType: async (reference) => { asked.push(reference); return answers[reference.number] ?? { status: 'none', corpus: 'ocre' }; } };
+  };
+  const dotted = { catalogue: 'RIC', number: '27', volume: 'IV', section: 'Philip I', dottedLetter: 'b' };
+  const both = provider({ 27: card('ric.4.ph_i.27', 'RIC IV Philip I 27'), '27b': card('ric.4.ph_i.27B', 'RIC IV Philip I 27B') });
+  const offered = await lookupType(dotted, { localProvider: both, online: false });
+  assert.equal(offered.status, 'candidates');
+  assert.deepEqual(offered.candidates.map(({ id }) => id), ['ric.4.ph_i.27', 'ric.4.ph_i.27B']);
+  assert.ok(both.asked.every((reference) => reference.dottedLetter === undefined));
+  // No lettered type, or only another ruler's, and the plain answer stands exactly as it was.
+  const plainOnly = provider({ 306: card('ric.1(2).ner.306', 'RIC I (second edition) Nero 306') });
+  assert.equal((await lookupType({ ...dotted, number: '306', dottedLetter: 'f' }, { localProvider: plainOnly, online: false })).card.id, 'ric.1(2).ner.306');
+  const stranger = provider({ 306: card('ric.1(2).ner.306', 'RIC I (second edition) Nero 306'),
+    '306f': { status: 'candidates', candidates: [{ id: 'ric.5.gall(1).306f', title: 'RIC V Gallienus 306f' }], partial: true, personMismatch: true } });
+  assert.equal((await lookupType({ ...dotted, number: '306', dottedLetter: 'f' }, { localProvider: stranger, online: false })).card.id, 'ric.1(2).ner.306');
+  // Only the lettered type answers: it is offered, never opened.
+  const letteredOnly = provider({ '27b': card('ric.4.ph_i.27B', 'RIC IV Philip I 27B') });
+  const alone = await lookupType(dotted, { localProvider: letteredOnly, online: false });
+  assert.deepEqual([alone.status, alone.candidates.map(({ id }) => id)], ['candidates', ['ric.4.ph_i.27B']]);
+  // An OCRE id the dealer linked settles it, a letter outside a-l is no letter, and a plain reference is asked for once, as it is.
+  for (const reference of [{ ...dotted, id: 'ric.4.ph_i.27' }, { ...dotted, dottedLetter: 's' }, { ...dotted, dottedLetter: undefined }]) {
+    const once = provider({ 27: card('ric.4.ph_i.27', 'RIC IV Philip I 27'), '27b': card('ric.4.ph_i.27B', 'RIC IV Philip I 27B') });
+    assert.equal((await lookupType(reference, { localProvider: once, online: false })).card.id, 'ric.4.ph_i.27', JSON.stringify(reference));
+    assert.equal(once.asked.length, 1);
+  }
+});

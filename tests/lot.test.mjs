@@ -1497,3 +1497,21 @@ test('the edition year of Calicó is not joined to the number', () => {
     assert.equal(findReferences(`Felipe II. 8 reales. ${text} MBC.`).references[0]?.text, row, text);
   }
 });
+
+// Loop P2 fix round 2: "RIC 27 b." is ambiguous — the type letter b, or an abbreviation with its full stop — so the row carries the letter as a
+// dotted one, and the lookup offers both readings and opens neither. Only a letter of RIC's alphabet with a full stop and a space or the end
+// behind it; every other shape reads as before.
+test('a dotted RIC letter behind the number is carried on the row as ambiguous, and nothing else is', () => {
+  const dotted = (text) => findReferences(text).references[0].reference.dottedLetter;
+  for (const [text, letter] of [['Philip I. RIC 27 b.', 'b'], ['Gallienus. RIC 335 f.', 'f'], ['Philip I. RIC IV 27 b. C. 9.', 'b']]) {
+    assert.equal(dotted(text), letter, text);
+    assert.equal(findReferences(text).references[0].reference.number, text.match(/(\d+) [a-l]\./)[1], text);
+  }
+  for (const text of ['Nero. RIC 306 s.', 'Nero. RIC 306 ff.', 'Nero. RIC 306 v. Chr.', 'Filippo I. RIC 27 a.C.', 'Philip I. RIC 27 b;', 'Philip I. RIC 27b.',
+    'Nero. RIC 306.', 'Nero. RIC 306 m.', 'Nero. Cohen 306 f.', 'Nero. RIC 306 a rare coin.',
+    'Nero. RIC 306 a. Chr.', 'Nero. RIC 306 n. Chr.', 'Nero. RIC 306 c. 300 AD.']) {
+    assert.equal(dotted(text), undefined, text);
+  }
+  const lot = findReferences('Philip I. Antoninian. RIC IV 27 b.');
+  assert.equal(lotLookup(lot.references[0], lot.rulers).dottedLetter, 'b');
+});

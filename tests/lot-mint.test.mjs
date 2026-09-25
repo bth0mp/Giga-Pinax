@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { RIC_SECTIONS } from '../extension/catalogues.js';
 import { findReferences, lotLookup } from '../extension/lot.js';
 import { parseReference } from '../extension/lookup.js';
-import { answer, skip } from './helpers/bundle.mjs';
+import { answer, bundleJson, skip } from './helpers/bundle.mjs';
 
 const lookup = (text) => {
   const lot = findReferences(text);
@@ -118,4 +118,42 @@ test('over the bundled catalogue, "RIC n f." never opens the f-type', { skip }, 
   assert.ok(niger.status !== 'ok' || !/\.3f$/i.test(niger.card.id), niger.card?.id);
   // What main found for the plain number is still found.
   assert.equal((await lookup('Nero. Denar. RIC 306 s.')).card?.id, (await lookup('Nero. Denar. RIC 306.')).card?.id);
+});
+
+// Loop P2 fix round 2: over the bundle, a dotted letter ("RIC IV 27 b.") never opens a coin where the lettered type is there to be meant: both
+// readings are offered. Where no lettered type answers ("RIC 306 f.", German "and following"), the answer is exactly the plain number's, as on main.
+test('over the bundled catalogue, a dotted RIC letter offers both readings and opens neither', { skip }, async () => {
+  const philip = await lookup('Philip I. Antoninian. RIC IV 27 b.');
+  assert.equal(philip.status, 'candidates');
+  assert.ok(philip.candidates.some(({ id }) => /\.27B$/i.test(id)) && philip.candidates.some(({ id }) => /\.27$/.test(id)), JSON.stringify(philip.candidates));
+  assert.equal((await lookup('Nero. Denar. RIC 306 f.')).card?.id, (await lookup('Nero. Denar. RIC 306.')).card?.id);
+  const numeral = (volume) => (/^[IVX]+/.exec(volume) ?? [''])[0];
+  let offered = 0;
+  let kept = 0;
+  let n = 0;
+  const entries = bundleJson('ocre/index.json').entries;
+  // Every RIC number that carries a k-type in the bundle, whoever's it is: there "k." is ambiguous, and the plain check below leaves it alone.
+  const kTypes = new Set(entries.map(([, title]) => /^(\d+)k(?![a-z\d])/i.exec(parseReference(title, false)?.number ?? '')?.[1]).filter(Boolean));
+  for (const [id, title] of entries) {
+    const hit = parseReference(title, false);
+    if (!hit || hit.section.includes('(') || hit.section.includes(' and ') || n++ % 6) continue;
+    const lettered = /^(\d+)([a-l])$/.exec(hit.number);
+    if (lettered) {
+      const [, digits, letter] = lettered;
+      const result = await lookup(`${hit.section}. Denarius. RIC ${numeral(hit.volume)} ${digits} ${letter}.`);
+      assert.notEqual(result.status, 'ok', `${title}: opened ${result.card?.id}`);
+      if (result.status === 'candidates' && result.candidates.some((entry) => entry.id === id)) offered += 1;
+      // The same letter closed by a ";" is no ambiguity: it opens the lettered coin or offers, as before, never another coin.
+      const closed = await lookup(`${hit.section}. Denarius. RIC ${numeral(hit.volume)} ${digits} ${letter};`);
+      assert.ok(closed.status !== 'ok' || closed.card.id === id, `${title}: ${closed.card?.id}`);
+    } else if (/^\d+$/.test(hit.number) && !kTypes.has(hit.number)) {
+      // A letter no lettered type answers is read as the plain number, exactly as main read it.
+      const plain = await lookup(`${hit.section}. Denar. RIC ${numeral(hit.volume)} ${hit.number}.`);
+      const following = await lookup(`${hit.section}. Denar. RIC ${numeral(hit.volume)} ${hit.number} k.`);
+      assert.deepEqual([following.status, following.card?.id, following.candidates?.map((entry) => entry.id)],
+        [plain.status, plain.card?.id, plain.candidates?.map((entry) => entry.id)], title);
+      kept += 1;
+    }
+  }
+  assert.ok(offered > 200 && kept > 100, `${offered} offered, ${kept} kept`);
 });

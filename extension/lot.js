@@ -521,6 +521,17 @@ const withSpacedLetter = (span, context) => {
   const found = SPACED_LETTER.exec(context);
   return found && found[1].length + 2 <= span.length ? `${found[1]}${found[2]}${span.slice(found[1].length + 2)}` : span;
 };
+// The same letter with a full stop behind it ("RIC 27 b.") is either the type letter closing its sentence or an abbreviation ("335 f.", and
+// following; "306 a. Chr."), and nothing in the text says which. The row keeps the plain number and carries the letter as dottedLetter, and the
+// lookup offers both readings and opens neither (lookup.js eitherReading). Only a letter of RIC's alphabet with a full stop and then a space or the
+// end: "a.C." and "a. Chr." are dates, "c. 300" is circa, "ff." is no letter, and "s.", "u.", "v." are no RIC type letter at all.
+const DOTTED_LETTER = /^([^;\n]{0,80}?\d) ([a-l])\.(?=\s|$)(?!\s+Chr\b)(?!(?<= c\.)\s+\d)/u;
+const withDottedLetter = (found, dotted) => {
+  const { reference } = found;
+  const number = reference.catalogue === 'RIC' && /^\d+$/.test(reference.number) ? reference.number : '';
+  if (!dotted || !number || !(dotted[1].endsWith(number) && !/\d/.test(dotted[1].at(-number.length - 1) ?? ''))) return found;
+  return { ...found, reference: { ...reference, dottedLetter: dotted[2] } };
+};
 function pieceAfter(raw, typed = false) {
   // An allowed word between the key and its number is not part of the reference ("Hendin 6th ed. 1243" is Hendin 1243), so the number is read past it.
   const span = raw.split(/\s+OCRE\b/i)[0].replace(GAP_HEAD, ' ');
@@ -600,14 +611,16 @@ export function findReferences(input) {
       : NUMBERED_KEY.test(match[2]) ? value.replace(NUMBER_WORD, (whole, volume) => `${volume ?? ''} `) : value);
     // Both respell the start only, so the span stays the head of the rest of the text, which is what a spaced letter is judged by.
     const plain = respell(after);
-    const span = RIC_KEY.test(match[2]) ? withSpacedLetter(plain, respell(text.slice(match.index + match[0].length))) : plain;
+    const rest = RIC_KEY.test(match[2]) ? respell(text.slice(match.index + match[0].length)) : '';
+    const span = rest ? withSpacedLetter(plain, rest) : plain;
+    const dotted = rest ? DOTTED_LETTER.exec(rest) : null;
     const { body, broken } = pieceAfter(span, TYPED_KEY_WORD.test(match[2]));
     // A key whose number is neither its own, a book's year nor a sale's number keeps no number, so nothing is listed for it.
     const before = text.slice(0, match.index);
     const number = unseparate(body);
     const own = (!SURNAMES.has(match[2].toLowerCase()) || (numberOnly(number) && !(broken && YEAR.test(number))))
       && !publicationYear(match[2], number, before, span) && !(HOUSE_KEY.test(match[2]) && SALE.test(span)) && !personal(match[2], before) && !(AMOUNT_KEY.test(match[2]) && AMOUNT.test(after));
-    const piece = { start: match.index, key: match[2], cf: Boolean(match[1]), run,
+    const piece = { start: match.index, key: match[2], cf: Boolean(match[1]), run, dotted: dotted && dotted[1].length + 2 < span.length ? dotted : null,
       written: `${text.slice(keyStart, match.index + match[0].length)}${own ? body : ''}` };
     if (broken || opens) run += 1;
     return piece;
@@ -615,7 +628,7 @@ export function findReferences(input) {
   const longer = new Set(pieces.filter((piece) => piece.key.length > 1).map((piece) => piece.run));
   const kept = pieces.filter((piece) => /\d/.test(piece.written) && !ORDINAL_ONLY.test(piece.written) && (piece.key.length > 1 || longer.has(piece.run)));
   const seen = new Set();
-  const normalised = kept.map((piece) => normalise(piece.written, piece.key, piece.cf));
+  const normalised = kept.map((piece) => withDottedLetter(normalise(piece.written, piece.key, piece.cf), piece.dotted));
   if (hint && normalised.filter(({ reference }) => reference.catalogue === 'RIC').length === 1) {
     const found = normalised.find(({ reference }) => reference.catalogue === 'RIC');
     found.reference = { ...found.reference, id: hint };
