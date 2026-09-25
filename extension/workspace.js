@@ -243,6 +243,8 @@ async function initWorkspace() {
   const setRoute = (focusLink = false) => {
     const active = routeFromHash(location.hash);
     applyActiveRoute(ROUTES, active, (route) => $(`route-${route}`), (route) => document.querySelector(`[data-route="${route}"]`));
+    // A route committed data moved on while another was shown is drawn as it is entered (K-04).
+    renderRoute(active);
     if (active === 'search') offerSelectedReference();
     // An address naming a queue ("#watchlist?queue=needs-outcome", from a missed reminder or the popup) shows it.
     const queue = /[?&]queue=([\w-]+)/.exec(location.hash)?.[1];
@@ -377,10 +379,33 @@ async function initWorkspace() {
     try { reply = await bridge.getSnapshot(); }
     catch { announce(WORKER_UNREACHABLE, true); return { ok: false, unreachable: true }; }
     if (!reply.ok) { announce(reply.message, true); return { ok: false }; }
-    beforeRender?.(reply.value);
-    const removed = acceptIncoming(reply.value);
+    return takeCommitted(reply.value, beforeRender);
+  };
+  // A committed snapshot taken: the commit that produced it first, then the page drawn once from it.
+  const takeCommitted = (incoming, beforeRender = null) => {
+    if (pendingIncoming && !newerRoot(pendingIncoming, incoming)) pendingIncoming = null;
+    beforeRender?.(incoming);
+    const removed = acceptIncoming(incoming);
     if (!removed) settleNotice();
-    return { ok: true, value: reply.value, removed };
+    return { ok: true, value: incoming, removed };
+  };
+  // What the subscription delivered and the page has not drawn yet (K-04). Writes come in bursts - a save, then the
+  // reminder schedule it leads to - and each carries the whole store, so the page takes the latest on the next frame,
+  // and never draws the same root twice or an older one over a newer.
+  let pendingIncoming = null;
+  const sameRoot = (left, right) => Boolean(left && right) && left.revision === right.revision && left.updatedAt === right.updatedAt;
+  // A root is older only when both its revision and its time are: a store started afresh restarts its revision.
+  const newerRoot = (candidate, held) => !held || (!sameRoot(candidate, held)
+    && (Number(candidate?.revision) > Number(held?.revision) || String(candidate?.updatedAt ?? '') > String(held?.updatedAt ?? '')));
+  const takePending = () => {
+    const incoming = pendingIncoming; pendingIncoming = null;
+    if (incoming && newerRoot(incoming, snapshot)) acceptIncoming(incoming);
+  };
+  const deliver = (incoming) => {
+    if (sameRoot(incoming, pendingIncoming ?? snapshot)) return;
+    const scheduled = Boolean(pendingIncoming);
+    pendingIncoming = incoming;
+    if (!scheduled) requestAnimationFrame(takePending);
   };
   const send = async (command, editor, previousAttempt = null) => {
     if (!bridge) return announce('Extension storage is unavailable in this page.', true);
@@ -406,6 +431,10 @@ async function initWorkspace() {
     // A refreshed snapshot decides the editors; when the refresh itself failed the commit is still
     // applied, against what this page already has, so a saved form is never left blank.
     const commitAndRefresh = async (value) => {
+      // The write this page is waiting on has usually reached it through the subscription before the reply did: that
+      // snapshot is as fresh as a second read of the whole store would be, and is taken instead of one (K-04).
+      const known = pendingIncoming ?? snapshot;
+      if (commandWasCommitted(known, command.requestId)) return takeCommitted(known, (incoming) => commit(value, incoming, true));
       const refreshed = await refresh((incoming) => commit(value, incoming, true));
       if (!refreshed.ok) commit(value, snapshot, false);
       return refreshed;
@@ -708,11 +737,18 @@ async function initWorkspace() {
     }
   }
   function renderLots() {
+    pruneComparison(); renderCoinList(); renderGroups(); renderSelectedEditors();
+  }
+  function pruneComparison() {
     const knownLotIds = new Set((snapshot.lots ?? []).map((lot) => lot.id));
     comparisonSelection = comparisonSelection.filter((id) => knownLotIds.has(id));
+  }
+  // The open coin's forms follow committed data on every snapshot, whichever route is shown: their bases are what a save
+  // and the conflict note are judged against (K-04).
+  function renderSelectedEditors() {
     fillSelect($('lot-form').elements.auctionEventId, snapshot.auctionEvents ?? [], 'No auction attached');
     renderBidPresets();
-    renderCoinList(); renderGroups(); renderSelectedLot();
+    renderSelectedLot();
   }
   const canLeaveSelectedEditors = () => !['lot', 'bid', 'outcome'].some((editor) => dirtyEditors.has(editor)) || confirm('Discard unsaved changes and open another coin?');
   function selectLot(lotId, { focus = true } = {}) {
@@ -1811,7 +1847,24 @@ async function initWorkspace() {
   // The popup's session median, followed while this page is open; nothing of it is written anywhere.
   let sessionMedians = [];
   followSessionMedians((found) => { sessionMedians = found; renderBidEvidence(); }, (globalThis.browser ?? globalThis.chrome)?.storage);
-  function renderAll() { renderEvidence(); renderLots(); renderEvents(); renderExposure(); renderHistory(); renderWants(); renderLotWantMatch(); renderOpenRecordForms(); updateDirtyMarks(); }
+  // One route drawn per snapshot (K-04): the route on screen now, and every other one marked stale and drawn when it is
+  // entered. Every extension page shares one renderer, so drawing six routes nobody sees slowed every page open beside it.
+  const ROUTE_RENDERS = {
+    search: () => renderEvidence(),
+    watchlist: () => { renderCoinList(); renderGroups(); },
+    auctions: () => renderEvents(),
+    bids: () => renderExposure(),
+    history: () => renderHistory(),
+    wants: () => renderWants(),
+  };
+  const staleRoutes = new Set();
+  function renderRoute(route) { if (staleRoutes.delete(route)) ROUTE_RENDERS[route]?.(); }
+  function renderAll() {
+    for (const route of ROUTES) staleRoutes.add(route);
+    pruneComparison();
+    renderRoute(routeFromHash(location.hash));
+    renderSelectedEditors(); renderLotWantMatch(); renderOpenRecordForms(); updateDirtyMarks();
+  }
   // On a wide screen the detail panel is never an empty "Select a coin": the coin the queue puts first is opened on
   // arrival - one needing its outcome before any other (G-06, G-20). The phone's list-then-detail switch is untouched.
   const wideScreen = () => { try { return Boolean(globalThis.matchMedia?.('(min-width: 761px)').matches); } catch { return false; } };
@@ -1854,7 +1907,7 @@ async function initWorkspace() {
       console.error(error);
       announce('The workspace could not finish loading. Reload this page to try again.', true);
     }
-    bridge.subscribeToSnapshots((incoming) => { acceptIncoming(incoming); });
+    bridge.subscribeToSnapshots(deliver);
   }
 }
 

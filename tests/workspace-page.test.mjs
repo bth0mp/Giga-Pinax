@@ -1983,11 +1983,18 @@ test('every workspace page with nothing in it says so in one empty state', async
   const state = (root) => { const box = root.querySelector('.empty-state'); return box && [box.querySelector('h3').textContent, box.querySelector('p').textContent, box.querySelector('button')?.textContent ?? '']; };
   assert.deepEqual(state(page.$('lot-list')), ['No coins yet', 'Save a coin from the popup, or add one here.', 'Add coin']);
   assert.equal(page.$('coin-workspace').dataset.empty, 'true', 'no detail panel beside it');
+  // Each route is drawn as it is shown (K-04).
+  await page.navigate('#auctions');
   assert.deepEqual(state(page.$('event-list')), ['No auctions yet', 'An auction keeps a sale’s date, time zone and reminders for the coins attached to it.', 'Add auction']);
+  await page.navigate('#bids');
   assert.deepEqual(state(page.$('exposure-list')), ['No active bids', 'A bid you record as placed counts here, per currency.', '']);
+  await page.navigate('#history');
   assert.deepEqual(state(page.$('history-list')), ['Nothing settled yet', 'A coin whose outcome you record appears here.', '']);
+  await page.navigate('#wants');
   assert.deepEqual(state(page.$('want-list')), ['No wants yet', 'A type you are looking for; a card, an upcoming lot or a captured lot of it says so.', 'Add want']);
+  await page.navigate('#search');
   assert.deepEqual(state(page.$('statistics-output')), ['No saved comparables', 'Sales you record by hand, kept apart from acsearch.', '']);
+  await page.navigate('#watchlist');
   await page.$('lot-list').querySelector('.empty-state').querySelector('button').click(); await settle();
   assert.equal(page.$('coin-workspace').dataset.empty, 'false', 'Add coin opens the coin form beside the list');
   assert.equal(page.$('selected-title').textContent, 'Add coin');
@@ -1998,10 +2005,12 @@ test('the workspace says buyer’s premium, comparable and auction, never BP, ev
   const background = await backgroundWithCoins('Nero, denarius');
   const coin = storedLot(background, 'Nero, denarius');
   await background.send({ type: 'bid.place', lotId: coin.id, expectedRevision: coin.revision, activeBid: { amount: { currency: 'EUR', minor: 50000 } } });
-  const page = await mountWorkspace({ background, hash: '#bids' });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
   await page.openCoin('Nero, denarius');
   const shown = (root) => root.querySelectorAll('label, legend, button, h2, h3, h4, p, summary, option, span').map((node) => node.textContent).join(' \u00b7 ');
-  const everything = shown(page.document.querySelector('main'));
+  // Each route is drawn as it is shown (K-04): every one is visited, and what each said is read.
+  let everything = shown(page.document.querySelector('main'));
+  for (const route of ['#search', '#auctions', '#history', '#wants', '#bids']) { await page.navigate(route); everything += shown(page.document.querySelector('main')); }
   for (const word of [/\bBP\b/, /[Bb]uyer premium/, /\bevidence\b/i, /\bevent\b/i]) assert.doesNotMatch(everything, word);
   assert.match(page.$('exposure-list').textContent, /Known hammer \+ buyer’s premium/);
   assert.match(page.$('exposure-list').textContent, /Incomplete — buyer’s premium unknown for 1 bid/);
@@ -2079,4 +2088,57 @@ test('the Search filter and the add form start on the default currency from ever
   assert.equal(euro.ok, true, euro.message);
   await settle();
   assert.deepEqual(currencies(direct), ['CHF', 'EUR'], 'the filter the collector chose stands; the untouched form follows the new default');
+});
+
+// --- Cycle 6, U2: the workspace at 800 coins -----------------------------------------------------------
+
+// K-04: a snapshot draws the route on screen; a route committed data moved on while another was shown is drawn as it is
+// entered, and shows what is stored then.
+test('a snapshot draws only the route on screen, and a route left behind is drawn when it is entered', async () => {
+  const background = await createWorkspaceBackground();
+  assert.equal((await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RIC I² Nero 306' } })).ok, true);
+  const page = await mountWorkspace({ background, hash: '#wants' });
+  const cards = () => page.$('want-list').querySelectorAll('.want-record').map((card) => card.querySelector('h3').textContent);
+  assert.deepEqual(cards(), ['RIC I² Nero 306']);
+  await page.navigate('#watchlist');
+  const drawn = page.$('want-list').children[0];
+  assert.equal((await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RRC 44/5' } })).ok, true);
+  await settle();
+  assert.equal(page.$('want-list').children[0], drawn, 'the want list is not drawn while the watchlist is shown');
+  await page.navigate('#wants');
+  assert.deepEqual(cards(), ['RIC I² Nero 306', 'RRC 44/5'], 'entered, it shows the want the other tab added');
+});
+
+// K-04: a save whose write has already reached the page through the subscription is drawn from that snapshot; the page
+// does not read the whole store a second time.
+test('a save whose write reached the page first is taken from that snapshot, with no second read of the store', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  await page.typeDetails('notes', 'Checked the flan');
+  const reads = () => page.commands.filter(({ type }) => type === 'snapshot.get').length;
+  const before = reads();
+  const hold = background.holdReply('lot.save');
+  await page.startSubmit('lot-form');
+  await hold.written; await settle();
+  hold.release(); await settle();
+  assert.equal(reads(), before, 'no snapshot.get after the save');
+  assert.match(page.$('lot-action-status').textContent, /^Details saved/);
+  assert.equal(page.$('lot-form').elements.notes.value, 'Checked the flan');
+  assert.equal(page.blocksUnload(), false, 'the saved form is clean');
+  assert.equal(page.conflictBanner(), '');
+});
+
+// K-04: the same snapshot delivered twice - by the save's own read and then by the subscription - is drawn once.
+test('the same stored root arriving twice is drawn once', async () => {
+  const background = await backgroundWithCoins('Nero, denarius');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  await page.typeDetails('notes', 'Once');
+  await page.saveDetails();
+  const drawn = page.$('lot-list').children[0];
+  // The browser tells every page of each write; the same root written again reaches the page again.
+  await background.storage.set({ [STORAGE_KEY]: background.root() });
+  await settle();
+  assert.equal(page.$('lot-list').children[0], drawn, 'the list was not drawn again for a root it already shows');
 });

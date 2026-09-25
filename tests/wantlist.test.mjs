@@ -862,3 +862,20 @@ test('the want form is disabled while the catalogue is read, and saves what it h
   assert.equal(page.$('want-form').elements.reference.disabled, false, 'the form is usable again');
   assert.equal(page.$('cancel-want').disabled, false);
 });
+
+// K-04: a page matches every want against every coin on each draw, so a reference is read once, however often it is
+// compared, and the reading handed out is the caller's own copy.
+test('matching reads each reference once, however often it is compared, and a reading handed out is a copy', async () => {
+  const { sameWantedType: same, wantedReading: read, readingsKept } = await import('../extension/core/wantlist.js');
+  const references = Array.from({ length: 300 }, (_, index) => `RIC II Trajan ${2000 + index}`);
+  const want = 'RIC II Trajan 2150';
+  const before = readingsKept();
+  for (const reference of references) same(want, reference);
+  assert.equal(readingsKept() - before, 300, 'the want and the 300 coins, each read once');
+  for (let round = 0; round < 40; round += 1) for (const reference of references) same(want, reference);
+  assert.equal(readingsKept() - before, 300, 'comparing them 40 times more reads nothing new');
+  assert.equal(same(want, 'RIC II Trajan 2150'), true);
+  const reading = read(want); reading.number = '1';
+  assert.equal(read(want).number, '2150', 'changing a reading handed out changes nothing kept');
+  assert.equal(same(want, 'RIC II Trajan 2150'), true);
+});
