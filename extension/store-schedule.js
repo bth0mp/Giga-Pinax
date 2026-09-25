@@ -86,4 +86,48 @@ function reconcileIntoSnapshot(next, context) {
   return plan;
 }
 
-export { reconcileIntoSnapshot };
+/**
+ * The collector's zone, from the context the writer runs in (background.js gives the browser's), or null where it gives
+ * none the browser can read.
+ * @param {CommandContext} context
+ * @returns {string | null}
+ */
+function collectorZone(context) {
+  try {
+    const zone = typeof context.timeZone === 'function' ? context.timeZone() : context.timeZone;
+    if (typeof zone !== 'string' || !zone) return null;
+    new Intl.DateTimeFormat('en', { timeZone: zone }).format(0);
+    return zone;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Q-19: a date-only reminder the collector sets rings on their clock from then on, so it takes the collector's zone
+ * (reminders.js). A reminder is set when it is new, when its own day count or time changed, or when its auction's sale
+ * day or time zone did. Any other reminder keeps what it holds - its stored zone, or none - so a rename or a note never
+ * moves a reminder or brings back one already acknowledged (review Important 1); the workspace form sends reminders back
+ * without the field, so it is taken from the stored record, not the draft. Only a save does this: a reconcile, a load or
+ * an import leaves the reminders an auction holds as they are. The event is changed in place.
+ * @param {import('./core/types.js').AuctionEvent} event
+ * @param {import('./core/types.js').AuctionEvent | null} existing the auction as stored before this save, or null for a new one
+ * @param {CommandContext} context
+ * @returns {void}
+ */
+function ringOnCollectorClock(event, existing, context) {
+  if (event.precision !== 'date-only') return;
+  const zone = collectorZone(context);
+  const dayMoved = !existing || existing.precision !== 'date-only' || existing.localDate !== event.localDate ||
+    existing.timeZone !== event.timeZone;
+  for (const reminder of event.reminders) {
+    if (reminder.kind !== 'wall-time') continue;
+    const before = dayMoved ? undefined : existing?.reminders.find(({ id }) => id === reminder.id);
+    if (before?.kind === 'wall-time' && before.daysBefore === reminder.daysBefore && before.localTime === reminder.localTime) {
+      if (before.collectorTimeZone === undefined) delete reminder.collectorTimeZone;
+      else reminder.collectorTimeZone = before.collectorTimeZone;
+    } else if (zone !== null) reminder.collectorTimeZone = zone;
+  }
+}
+
+export { reconcileIntoSnapshot, ringOnCollectorClock };
