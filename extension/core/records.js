@@ -913,6 +913,10 @@ export function migrateSnapshot(stored) {
 
 const DISCARDED_ON_REPAIR = new Set(['recentCommands', 'drafts']);
 
+// The reason a list the repair set aside whole is kept under: what it held was no list, so it is no record to put back,
+// and the collector is told it was the list (review Minor 5).
+export const UNREADABLE_LIST = 'unreadable-list';
+
 // The bin keeps no identifier of its own, and entries written by older builds or by another install
 // carry none either, so an entry is named by what it holds: the same bytes name the same entry on
 // every device. The date it was set aside is left out of the name. A load repairs a root without
@@ -1154,7 +1158,7 @@ export function quarantineInvalidRecords(stored, now) {
   for (const { key, maximum, validator, keepNewest, optional } of COLLECTIONS) {
     // A want list that is no list at all is set aside whole, rather than refusing every other record over it.
     if (optional && !Array.isArray(root[key])) {
-      if (root[key] !== undefined && root[key] !== null) setAside(key, root[key], 'invalid-record');
+      if (root[key] !== undefined && root[key] !== null) setAside(key, root[key], UNREADABLE_LIST);
       delete root[key];
       continue;
     }
@@ -1163,7 +1167,7 @@ export function quarantineInvalidRecords(stored, now) {
     // every other record unreadable (X-02).
     if (root[key] === undefined) return failure('invalid-record', `Stored ${key} is not a list.`, key);
     if (!Array.isArray(root[key])) {
-      setAside(key, root[key], 'invalid-record');
+      setAside(key, root[key], UNREADABLE_LIST);
       root[key] = [];
       continue;
     }

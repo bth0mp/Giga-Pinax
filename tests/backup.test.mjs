@@ -7,7 +7,7 @@ import {
   BACKUP_FORMAT, MAX_BACKUP_BYTES, backupFileName, exportBackup, importChangeLines,
   importCountsText, importIssueLines, previewImport, quarantineDocument, quarantineLines,
   quarantineRestoreText, quarantineRows, quarantineSummaryText, rawExportDocument, setAsideCountText, validateBackup,
-  importNothingText,
+  importNothingText, OWN_RECORD_FIELDS,
 } from '../extension/core/backup.js';
 
 const NOW = '2026-09-12T12:00:00.000Z';
@@ -1046,6 +1046,32 @@ test('X-03: a set-aside coin is named with the field that stops it, in plain wor
   assert.equal(setAsideCountText([title, { collection: 'wants', record: { id: 'x' }, reason: 'invalid-record', quarantinedAt: NOW }]), '2 records set aside');
   assert.equal(setAsideCountText([{ collection: 'auctionEvents', record: null, reason: 'missing-record', quarantinedAt: NOW }]), '', 'a note of cleared links is no record');
   assert.equal(setAsideCountText(undefined), '');
+});
+
+// Review Minor 5: a whole list the repair set aside is said as a list, offers no field to correct and no Restore, and
+// can still be removed; null read as "a missing coin other records pointed to", and {} offered its ID to correct.
+test('a whole list set aside reads as that list, and offers Remove alone', () => {
+  const lists = [
+    { collection: 'lots', record: null, reason: 'unreadable-list', quarantinedAt: NOW },
+    { collection: 'lots', record: {}, reason: 'unreadable-list', quarantinedAt: NOW },
+    { collection: 'wants', record: 'x', reason: 'unreadable-list', quarantinedAt: NOW },
+  ];
+  assert.deepEqual(quarantineLines(lists), [
+    'The coin list could not be read (set aside 2026-09-12)',
+    'The coin list could not be read (set aside 2026-09-12)',
+    'The want list could not be read (set aside 2026-09-12)',
+  ]);
+  assert.deepEqual(quarantineRows(lists).map(({ restorable, removable, noun, problem }) => [restorable, removable, noun, problem]), [
+    [false, true, 'coin list', null], [false, true, 'coin list', null], [false, true, 'want list', null],
+  ]);
+  assert.equal(setAsideCountText(lists.slice(0, 1)), '1 coin list set aside');
+  assert.equal(setAsideCountText(lists), '3 lists set aside');
+  const coin = { collection: 'lots', record: damagedLot({ title: 42 }), reason: 'invalid-string', quarantinedAt: NOW };
+  assert.equal(setAsideCountText([coin, lists[2]]), '2 records set aside');
+  // A single record that is an empty object still names its fields, and never offers its ID.
+  const empty = quarantineRows([{ collection: 'lots', record: {}, reason: 'invalid-record', quarantinedAt: NOW }])[0];
+  assert.equal(empty.restorable, true);
+  assert.equal(empty.problem.problems.some(({ field, editable, clearable }) => OWN_RECORD_FIELDS.includes(field) && (editable || clearable)), false);
 });
 
 test('settings set aside whole, or an unreadable entry of the list itself, offer no Restore', () => {

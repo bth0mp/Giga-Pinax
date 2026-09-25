@@ -2955,7 +2955,16 @@ test('X-02: a collection that is no list is set aside whole, and the other recor
   assert.equal(read.ok, true, read.message);
   assert.deepEqual(read.value.lots.map(({ title }) => title), ['Still here']);
   assert.deepEqual(read.value.auctionEvents, []);
-  assert.deepEqual(read.value.quarantine.map(({ collection, record, reason }) => [collection, record, reason]), [['auctionEvents', 'x', 'invalid-record']]);
+  assert.deepEqual(read.value.quarantine.map(({ collection, record, reason }) => [collection, record, reason]), [['auctionEvents', 'x', 'unreadable-list']]);
+  // Review Minor 5: a list that is null is set aside as the list it is, not taken for a record other records pointed to.
+  const nulled = await createCommandWriter(memoryStorage({ ...createEmptySnapshot(NOW), lots: null }), context()).commitCommand(command('snapshot.get'));
+  assert.deepEqual(nulled.value.quarantine.map(({ collection, record, reason }) => [collection, record, reason]), [['lots', null, 'unreadable-list']]);
+  assert.deepEqual(quarantineRows(nulled.value.quarantine).map(({ line, removable }) => [line, removable]), [['The coin list could not be read (set aside 2026-09-12)', true]]);
+  // And it can be removed from the list for good.
+  const writer = createCommandWriter(memoryStorage({ ...createEmptySnapshot(NOW), lots: null }), context());
+  const [row] = quarantineRows((await writer.commitCommand(command('snapshot.get'))).value.quarantine);
+  const removed = await writer.commitCommand(command('quarantine.remove', { entryId: row.id }));
+  assert.equal(removed.ok, true, removed.message);
 });
 
 // X-03: a set-aside coin can go back with the field that stopped it corrected or cleared, or be removed for good.

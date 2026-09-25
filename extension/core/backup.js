@@ -1,6 +1,6 @@
 // @ts-check
 import {
-  LIMITS, RECORDS_LIMIT_TEXT, SCHEMA_VERSION, createEmptySnapshot, megabytesText, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot,
+  LIMITS, RECORDS_LIMIT_TEXT, SCHEMA_VERSION, UNREADABLE_LIST, createEmptySnapshot, megabytesText, foldQuarantine, followOutcome, isRestorableCollection, migrateSnapshot,
   quarantineEntryId, unusableRevisions, validateQuarantinedRecord, validateSnapshot,
 } from './records.js';
 import { sameEventKey } from './evidence.js';
@@ -946,6 +946,9 @@ export function restoreRefusalText(collection, record) {
   return `This ${noun} cannot go back as it is: ${listed}. Correct ${problems.length === 1 ? 'it' : 'them'} or remove it under Set-aside records.`;
 }
 
+// A list the repair set aside whole (review Minor 5).
+const isWholeList = (entry) => entry?.reason === UNREADABLE_LIST && isRestorableCollection(entry?.collection);
+
 function quarantineLine(entry) {
   const cleared = entry.clearedReferences?.length ?? 0;
   const links = cleared ? `, ${cleared} link${cleared === 1 ? '' : 's'} cleared` : '';
@@ -955,6 +958,7 @@ function quarantineLine(entry) {
     return `settings with ${presets ? presetsText(presets) : 'no house presets'}: ${entry.reason} (${date})${links}`;
   }
   if (entry?.collection === 'quarantine') return `An entry of this list that could not be read (set aside ${date})`;
+  if (isWholeList(entry)) return `The ${recordNoun(entry.collection)} list could not be read (set aside ${date})${links}`;
   if (entry?.record === null || entry?.record === undefined) {
     return `A missing ${recordNoun(entry?.collection)} other records pointed to (set aside ${date})${links}`;
   }
@@ -981,8 +985,13 @@ export function quarantineLines(entries) {
  */
 export function quarantineRows(entries) {
   return (Array.isArray(entries) ? entries : []).map((entry) => {
-    const restorable = entry?.record !== null && entry?.record !== undefined && isRestorableCollection(entry?.collection);
-    return { id: quarantineEntryId(entry), line: quarantineLine(entry), restorable, problem: restorable ? quarantineProblem(entry) : null };
+    // A list set aside whole is no record to put back, but the collector can still take it out of the bin.
+    const list = isWholeList(entry);
+    const restorable = !list && entry?.record !== null && entry?.record !== undefined && isRestorableCollection(entry?.collection);
+    return {
+      id: quarantineEntryId(entry), line: quarantineLine(entry), restorable, removable: restorable || list,
+      noun: list ? `${recordNoun(entry.collection)} list` : recordNoun(entry?.collection), problem: restorable ? quarantineProblem(entry) : null,
+    };
   });
 }
 
@@ -992,12 +1001,20 @@ export function quarantineRows(entries) {
  * @returns {string} empty while nothing is
  */
 export function setAsideCountText(entries) {
-  const records = (Array.isArray(entries) ? entries : [])
-    .filter((entry) => entry?.record !== null && entry?.record !== undefined && isRestorableCollection(entry?.collection));
-  if (!records.length) return '';
+  const all = Array.isArray(entries) ? entries : [];
+  const lists = all.filter(isWholeList);
+  const records = all.filter((entry) => !isWholeList(entry) &&
+    entry?.record !== null && entry?.record !== undefined && isRestorableCollection(entry?.collection));
+  const count = records.length + lists.length;
+  if (!count) return '';
+  if (!records.length) {
+    const collections = new Set(lists.map(({ collection }) => collection));
+    return count === 1 ? `1 ${recordNoun(lists[0].collection)} list set aside`
+      : `${count} ${collections.size === 1 ? `${recordNoun([...collections][0])} lists` : 'lists'} set aside`;
+  }
   const collections = new Set(records.map(({ collection }) => collection));
-  const noun = collections.size === 1 ? recordNoun([...collections][0], records.length) : (records.length === 1 ? 'record' : 'records');
-  return `${records.length} ${noun} set aside`;
+  const noun = !lists.length && collections.size === 1 ? recordNoun([...collections][0], count) : (count === 1 ? 'record' : 'records');
+  return `${count} ${noun} set aside`;
 }
 
 // What the store answered a restore with, as a sentence: what went back, and what was left alone.

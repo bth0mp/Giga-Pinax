@@ -89,6 +89,7 @@ test('a want that stops validating is set aside on its own, and can be put back'
   assert.equal(broken.ok, true);
   assert.equal(Object.hasOwn(broken.value, 'wants'), false);
   assert.equal(broken.value.quarantine[0].collection, 'wants');
+  assert.equal(broken.value.quarantine[0].reason, 'unreadable-list');
   // A root with no want list is repaired without one.
   assert.equal(Object.hasOwn(quarantineInvalidRecords(createEmptySnapshot(NOW), NOW).value, 'wants'), false);
 });

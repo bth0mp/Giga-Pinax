@@ -255,7 +255,7 @@ async function restoreSetAside(entryId, button, edits) {
 
 // Taking a set-aside record out of the list for good (X-03), once the collector has said so knowing the download exists.
 async function removeSetAside(row, button) {
-  const { noun, label } = row.problem;
+  const { noun, label } = row.problem ?? { noun: row.noun, label: '' };
   const named = label ? ` “${label}”` : '';
   if (!confirm(`Remove this ${noun}${named} for good? Download set-aside records first if you may want it later.`)) return;
   button.disabled = true;
@@ -279,7 +279,7 @@ function quarantineItem(row) {
   const line = document.createElement('span');
   line.textContent = row.line;
   item.append(line);
-  if (!row.restorable) return item;
+  if (!row.removable) return item;
   quarantineRowSequence += 1;
   line.id = `quarantine-line-${quarantineRowSequence}`;
   const control = (text, kind = 'quiet') => {
@@ -291,10 +291,15 @@ function quarantineItem(row) {
     button.setAttribute('aria-describedby', line.id);
     return button;
   };
-  const restore = control('Restore');
-  restore.addEventListener('click', () => { void restoreSetAside(row.id, restore); });
   const remove = control('Remove');
   remove.addEventListener('click', () => { void removeSetAside(row, remove); });
+  // A list set aside whole has nothing to put back or correct; it can only be removed (review Minor 5).
+  if (!row.restorable) {
+    item.append(' ', remove);
+    return item;
+  }
+  const restore = control('Restore');
+  restore.addEventListener('click', () => { void restoreSetAside(row.id, restore); });
   item.append(' ', restore, ' ', remove);
   // Every field that stops it is offered at once, and one button sends every correction together (review Important 2).
   const fixable = (row.problem?.problems ?? []).filter(({ field, editable, clearable }) => field && (editable || clearable));

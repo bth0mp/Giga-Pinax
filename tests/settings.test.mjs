@@ -1739,6 +1739,27 @@ test('X-03: Remove asks first, names the coin, and takes it out of the list', as
   assert.equal(page.element('data-health').hidden, true);
 });
 
+// Review Minor 5: a whole list set aside has nothing to correct or put back, but can still be removed.
+test('X-03: a whole list set aside offers Remove alone, named as the list', async () => {
+  const entry = { collection: 'lots', record: 'x', reason: 'unreadable-list', quarantinedAt: '2026-09-12T12:00:00.000Z' };
+  const page = await openSettings({
+    snapshot: snapshotWith({ quarantine: [entry] }),
+    reply: (command, state) => {
+      state.snapshot = { ok: true, value: snapshotWith() };
+      return { ok: true, value: { collection: 'lots' } };
+    },
+  });
+  const row = page.element('quarantine-list').children[0];
+  assert.equal(row.querySelector('span').textContent, 'The coin list could not be read (set aside 2026-09-12)');
+  assert.deepEqual(row.querySelectorAll('button').map((button) => button.textContent), ['Remove']);
+  assert.equal(row.querySelectorAll('input').length, 0, 'nothing to correct');
+  await row.querySelectorAll('button')[0].click();
+  await settle();
+  assert.deepEqual(page.prompts, ['Remove this coin list for good? Download set-aside records first if you may want it later.']);
+  assert.deepEqual(page.commands.map(({ type, entryId }) => [type, entryId]), [['quarantine.remove', quarantineEntryId(entry)]]);
+  assert.equal(page.status(), 'The coin list was removed from the set-aside records.');
+});
+
 test('X-03: Settings opened for the set-aside records from the workspace keeps its way back', async () => {
   const page = await openSettings({ hash: '#from-workspace%3Fdata-health' });
   assert.equal(page.element('settings-return').textContent, 'Return to workspace');
