@@ -2106,7 +2106,7 @@ test('a snapshot draws only the route on screen, and a route left behind is draw
   const drawn = page.$('want-list').children[0];
   assert.equal((await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RRC 44/5' } })).ok, true);
   await settle();
-  assert.equal(page.$('want-list').children[0], drawn, 'the want list is not drawn while the watchlist is shown');
+  assert.ok(page.$('want-list').children[0] === drawn, 'the want list is not drawn while the watchlist is shown');
   await page.navigate('#wants');
   assert.deepEqual(cards(), ['RIC I² Nero 306', 'RRC 44/5'], 'entered, it shows the want the other tab added');
 });
@@ -2142,7 +2142,7 @@ test('the same stored root arriving twice is drawn once', async () => {
   // The browser tells every page of each write; the same root written again reaches the page again.
   await background.storage.set({ [STORAGE_KEY]: background.root() });
   await settle();
-  assert.equal(page.$('lot-list').children[0], drawn, 'the list was not drawn again for a root it already shows');
+  assert.ok(page.$('lot-list').children[0] === drawn, 'the list was not drawn again for a root it already shows');
 });
 
 // K-05: choosing a coin moves the selection on its row; the list is drawn again only when what it lists changes.
