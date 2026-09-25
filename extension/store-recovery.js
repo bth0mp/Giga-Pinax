@@ -86,7 +86,7 @@ export function downloadFile(document, text, name) {
  * @param {{
  *   document: Document, bridge: Bridge, reply: *,
  *   download?: (text: string, name: string) => void, confirm?: (message: string) => boolean, reload?: () => void,
- *   importHint?: 'settings' | 'below',
+ *   importHint?: 'settings' | 'below', after?: Element | null,
  * }} options
  * @returns {HTMLElement | null} the notice, or null when the page has no main area to put it in
  */
@@ -96,6 +96,7 @@ export function mountRecovery({
   confirm = (message) => globalThis.confirm(message),
   reload = () => globalThis.location.reload(),
   importHint = 'settings',
+  after = null,
 }) {
   const main = document.querySelector('main');
   if (!main) return null;
@@ -181,7 +182,9 @@ export function mountRecovery({
     actions.append(hint);
   }
   card.append(title, text, actions, status);
-  main.prepend(card);
+  // Under a header the page gives (the popup's, whose skip link sits above it), otherwise first in main (review Minor 7).
+  if (after?.parentNode === main) after.after(card);
+  else main.prepend(card);
   return card;
 }
 
