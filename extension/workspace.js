@@ -1794,15 +1794,24 @@ async function initWorkspace() {
       const more = text('button', '', 'quiet coin-more'); more.type = 'button';
       const label = () => { const left = cards.length - historyWindow.shown; more.textContent = `Show ${Math.min(left, HISTORY_WINDOW)} more (${left} not shown)`; };
       label();
-      const showMore = () => {
+      // The button stays where it is and the cards are drawn before it; pressed, it hands the keyboard to the first card it
+      // drew and says how many (review Minor 3).
+      const showMore = (fromButton) => {
         const from = historyWindow.shown; historyWindow.shown += HISTORY_WINDOW;
-        more.remove(); appendCards(from, historyWindow.shown);
-        if (cards.length > historyWindow.shown) { label(); root.append(more); } else { historyMoreWatch?.disconnect(); historyMoreWatch = null; }
+        const drawn = cards.slice(from, historyWindow.shown).map((card) => card());
+        const previous = root.children[root.children.length - 2];
+        if (drawn.length) previous.after(...drawn);
+        if (cards.length > historyWindow.shown) label(); else { historyMoreWatch?.disconnect(); historyMoreWatch = null; }
+        if (fromButton && drawn.length) {
+          drawn[0].tabIndex = -1; drawn[0].focus();
+          $('announcement').textContent = `${drawn.length} more settled coin${drawn.length === 1 ? '' : 's'} shown`;
+        }
+        if (cards.length <= historyWindow.shown) more.remove();
       };
-      more.addEventListener('click', showMore);
+      more.addEventListener('click', () => showMore(true));
       root.append(more);
       if (typeof IntersectionObserver === 'function') {
-        historyMoreWatch = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && more.isConnected) showMore(); }, { rootMargin: '200px' });
+        historyMoreWatch = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting) && more.isConnected) showMore(false); }, { rootMargin: '200px' });
         historyMoreWatch.observe(more);
       }
     }

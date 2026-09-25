@@ -2515,3 +2515,21 @@ test('the coin list holds only its options, numbered in the whole list, with Sho
   assert.equal(rows().length, 130);
   assert.equal(more.hidden, true);
 });
+
+// Fix round, Minor 3 (K-08): History's Show more stays where it is, hands the keyboard to the first card it drew, and
+// says how many.
+test('History’s Show more hands the keyboard to the first new card and says how many were shown', async () => {
+  const background = await createWorkspaceBackground();
+  for (let index = 1; index <= 60; index += 1) {
+    const saved = await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: `Lost ${index}`, sourceLinks: [] } });
+    assert.equal((await background.send({ type: 'lot.outcome.set', lotId: saved.value.id, expectedRevision: 0, outcome: { status: 'passed' } })).ok, true);
+  }
+  const page = await mountWorkspace({ background, hash: '#history' });
+  const cards = () => page.$('history-list').querySelectorAll('.record');
+  const more = page.$('history-list').querySelector('.coin-more');
+  assert.equal(cards().length, 50);
+  await more.click(); await settle();
+  assert.equal(cards().length, 60);
+  assert.ok(page.document.activeElement === cards()[50], 'the first new card has the keyboard');
+  assert.equal(page.$('announcement').textContent, '10 more settled coins shown');
+});
