@@ -2153,7 +2153,7 @@ test('choosing another coin moves the selection without drawing the list again',
   const rows = () => page.$('lot-list').querySelectorAll('.coin-row');
   const drawn = rows();
   await page.openCoin('Trajan, sestertius');
-  assert.deepEqual(rows(), drawn, 'the same rows');
+  assert.ok(rows().length === drawn.length && rows().every((row, index) => row === drawn[index]), 'the same rows, not redrawn');
   assert.deepEqual(rows().map((row) => row.getAttribute('aria-selected')), drawn.map((row) => String(row.textContent.includes('Trajan'))));
   assert.equal(page.$('selected-title').textContent, 'Trajan, sestertius');
   // A coin kept in the list only because it was open leaves it when another is chosen.
