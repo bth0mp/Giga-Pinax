@@ -9,6 +9,10 @@ import {
 import { WANT_GRADES } from '../extension/core/fields.js';
 import { exportBackup, importChangeLines, previewImport, validateBackup } from '../extension/core/backup.js';
 import { CSV_TABLES, csvFiles } from '../extension/core/csv.js';
+import { formatMoney } from '../extension/core/money.js';
+import {
+  namesOneType, openWantsFor, sameWantedType, wantBadgeText, wantFromForm, wantReferenceProblem, wantTermsText, wantedReading, wonCoinsFor,
+} from '../extension/core/wantlist.js';
 import { STORAGE_KEY, applyCommand, createCommandWriter } from '../extension/store.js';
 import { createWorkspaceBackground } from './helpers/dom.mjs';
 
@@ -288,4 +292,92 @@ test('the Want list CSV writes each want with its maximum in its own currency an
     `"${OTHER_WANT}","Price 112","","","","Wanted","","","","","${NOW}","${NOW}"`,
   ]);
   assert.equal(csvFiles(createEmptySnapshot(NOW)).wants.replace(/^﻿/, '').trimEnd().split('\r\n').length, 1, 'no wants, the header alone');
+});
+
+// --- Matching by catalogue rules --------------------------------------------------------------------
+
+test('a want matches the same type in any spelling the lookup reads, and never a neighbour', () => {
+  for (const [left, right] of [
+    ['RIC I² Nero 306', 'RIC I (second edition) Nero 306'],
+    ['RIC II Trajan 253', 'ric ii trajan 253'],
+    ['RIC II Trajan 253', 'RIC II Trajan 253; BMC 12'],
+    ['RRC 44/5', 'Crawford 44/5'],
+    ['Price 112', 'Price  112'],
+    ['SC 2195.5c', 'SC 2195.5c'],
+    ['RIC VII Antioch 1', 'RIC VII Antioch 1'],
+  ]) assert.equal(sameWantedType(left, right), true, `${left} = ${right}`);
+  for (const [left, right] of [
+    ['RIC I² Nero 306', 'RIC I² Nero 306a'],
+    ['RIC I² Nero 306', 'RIC I Nero 306'],
+    ['RIC II Trajan 253', 'RIC II Trajan 254'],
+    ['RIC II Trajan 253', 'RIC II Hadrian 253'],
+    ['RIC II Trajan 253', 'RIC III Trajan 253'],
+    ['RRC 44/5', 'RRC 44/5a'],
+    ['Price 112', 'Price L112'],
+    ['Price 112', 'SC 112'],
+    ['RIC II Hadrian 1009', 'RIC II Hadrian 1009–1012'],
+  ]) assert.equal(sameWantedType(left, right), false, `${left} ≠ ${right}`);
+});
+
+test('only a reading that names one type can be wanted or match one', () => {
+  for (const reference of ['RIC 306', 'RIC II 253', 'RIC 268 (Elagabalus)', 'SNG Cop 123', 'RPC I 1234', 'HGC 4, 1218',
+    'Sear 1234', 'Good VF', 'RIC IV 27 b.', '', '   ', null, 42]) {
+    assert.equal(wantedReading(reference), null, String(reference));
+    assert.notEqual(wantReferenceProblem(reference), '', String(reference));
+    assert.equal(sameWantedType(reference, reference), false, `${reference} does not even match itself`);
+  }
+  // A dealer's dotted letter, as lot.js reads one, names two types.
+  assert.equal(namesOneType({ catalogue: 'RIC', number: '27', volume: 'IV', section: 'Caracalla', dottedLetter: 'b' }), false);
+  for (const reference of ['RIC I² Nero 306', 'RIC VII Antioch 1', 'RRC 44/5', 'Price 112', 'SC 2195.5c', 'CPE 12', 'Bopearachchi 5A', 'RIC II.3² Hadrian 1009-1012']) {
+    assert.ok(wantedReading(reference), reference);
+    assert.equal(wantReferenceProblem(reference), '', reference);
+  }
+  assert.equal(wantReferenceProblem('RIC 306'), 'A RIC reference names its volume and its ruler or mint, as a card does: RIC II Trajan 253, RIC VII Antioch 1.');
+  // OCRE titles some types over a range, so a range is one type when it is written as the want was, and only then.
+  assert.equal(sameWantedType('RIC II.3² Hadrian 1009-1012', 'RIC II, Part 3 (second edition) Hadrian 1009–1012'), true);
+  assert.match(wantReferenceProblem('SNG Cop 123'), /^“SNG Cop 123” is not read as one catalogue type\./);
+});
+
+test('the open wants of a type are the ones not yet found; a stored want no rule reads matches nothing', () => {
+  const wants = [
+    makeWant({ reference: 'RIC I² Nero 306', maxPrice: { currency: 'EUR', minor: 80000 }, minGrade: 'VF' }),
+    makeWant({ id: OTHER_WANT, reference: 'RIC I (second edition) Nero 306', foundLotId: LOT_ID, foundAt: NOW }),
+    makeWant({ id: '66666666-6666-4666-8666-666666666666', reference: 'SNG Cop 123' }),
+  ];
+  assert.deepEqual(openWantsFor(wants, 'RIC I (second edition) Nero 306').map(({ id }) => id), [WANT_ID]);
+  assert.deepEqual(openWantsFor(wants, { catalogue: 'RIC', number: '306', volume: 'I (2nd edition)', section: 'Nero' }).map(({ id }) => id), [WANT_ID], 'a reading already made');
+  assert.deepEqual(openWantsFor(wants, 'SNG Cop 123'), []);
+  assert.deepEqual(openWantsFor(wants, 'RIC 306'), []);
+  assert.deepEqual(openWantsFor(undefined, 'RIC I² Nero 306'), []);
+  assert.equal(wantBadgeText(openWantsFor(wants, 'RIC I² Nero 306')), 'On your want list · up to €800.00 · VF or better');
+  assert.equal(wantBadgeText([makeWant()]), 'On your want list');
+  assert.equal(wantBadgeText([]), '');
+  assert.equal(wantTermsText(makeWant({ minGrade: 'F' })), 'Fine or better');
+  assert.equal(wantTermsText(makeWant({ maxPrice: { currency: 'CHF', minor: 120000 } })), `up to ${formatMoney({ currency: 'CHF', minor: 120000 }, 'en-US', { narrow: true })}`);
+});
+
+test('a won coin of the type is the one a want can be marked found by', () => {
+  const lots = [
+    wonLot(LOT_ID),
+    wonLot('77777777-7777-4777-8777-777777777777', { reference: 'RIC II Trajan 254' }),
+    { ...wonLot('88888888-8888-4888-8888-888888888888'), outcome: { status: 'open' } },
+    wonLot('99999999-9999-4999-8999-999999999999', { reference: undefined }),
+  ];
+  assert.deepEqual(wonCoinsFor(makeWant(), lots).map(({ id }) => id), [LOT_ID]);
+});
+
+test('the Want list form is read into a want, or names the field that stops it', () => {
+  const wants = [makeWant(), makeWant({ id: OTHER_WANT, reference: 'Price 112', foundLotId: LOT_ID, foundAt: NOW })];
+  assert.deepEqual(wantFromForm({ reference: ' RIC I² Nero 306 ', maxPrice: '1,200.50', currency: 'GBP', minGrade: 'EF', notes: 'Dark tone' }, { wants }),
+    { ok: true, value: { reference: 'RIC I² Nero 306', maxPrice: { currency: 'GBP', minor: 120050 }, minGrade: 'EF', notes: 'Dark tone' } });
+  assert.deepEqual(wantFromForm({ reference: 'Price 112', maxPrice: '', currency: 'EUR', minGrade: '', notes: '  ' }, { wants }),
+    { ok: true, value: { reference: 'Price 112' } }, 'a found want of the type does not stop a new one');
+  assert.deepEqual(wantFromForm({ id: WANT_ID, reference: 'ric ii trajan 253' }, { wants }).ok, true, 'an edit keeps its own reference');
+  assert.deepEqual(wantFromForm({ reference: 'RIC II Trajan 253' }, { wants }),
+    { ok: false, field: 'reference', message: 'RIC II Trajan 253 is already on your want list.' });
+  assert.deepEqual(wantFromForm({ reference: 'RIC 306' }).field, 'reference');
+  assert.deepEqual(wantFromForm({ reference: 'Price 1', maxPrice: 'lots', currency: 'EUR' }).field, 'maxPrice');
+  assert.deepEqual(wantFromForm({ reference: 'Price 1', maxPrice: '0', currency: 'EUR' }).field, 'maxPrice');
+  assert.deepEqual(wantFromForm({ reference: 'Price 1', minGrade: 'XF' }).field, 'minGrade');
+  assert.deepEqual(wantFromForm({ reference: 'Price 1', maxPrice: '1.200,50', currency: 'EUR' }, { locale: 'de-DE' }).value.maxPrice, { currency: 'EUR', minor: 120050 });
 });
