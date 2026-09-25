@@ -665,8 +665,10 @@ async function initWorkspace() {
     // The coin open in the editor stays in its list until another is chosen, even once its outcome moved it to another
     // queue: a list that drops the coin beside its own editor reads as a coin lost (G-07).
     const open = (snapshot.lots ?? []).find((lot) => lot.id === selection.selectedLotId);
-    if (open && !queuedLots.includes(open)) queuedLots.push(open);
+    const kept = Boolean(open && !queuedLots.includes(open));
+    if (kept) queuedLots.push(open);
     const visibleLots = filterWorkspaceLots(queuedLots, $('lot-filter').value);
+    listDrawn = { snapshot, queue: $('lot-queue').value, filter: $('lot-filter').value, kept };
     $('lot-count').textContent = `${visibleLots.length} of ${(snapshot.lots ?? []).length} coins`;
     const needingOutcome = new Set(lotsNeedingOutcome(snapshot).map((lot) => lot.id));
     // With no coin at all the list is the page: its empty state, and no detail panel beside it to say "Select a coin".
@@ -675,7 +677,7 @@ async function initWorkspace() {
     if (none) list.append(emptyState('No coins yet', 'Save a coin from the popup, or add one here.', { label: 'Add coin', run: () => $('new-lot').click() }));
     else if (!visibleLots.length) list.append(text('p', 'No coins match this filter.', 'empty-row'));
     for (const lot of visibleLots) {
-      const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id));
+      const row = text('button', '', 'coin-row'); row.type = 'button'; row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(selection.selectedLotId === lot.id)); row.dataset.lotId = lot.id;
       const top = text('span', '', 'coin-row-top'); top.append(text('strong', lot.reference || lot.title, 'coin-row-title'));
       const amount = lotRowAmountLabel(lot, money); if (amount) top.append(text('span', amount, 'coin-row-amount'));
       const sub = text('span', lot.reference ? lot.title : (lot.lotNumber ? `Lot ${lot.lotNumber}` : 'Uncatalogued coin'), 'coin-row-sub');
@@ -736,9 +738,21 @@ async function initWorkspace() {
       actions.append(editGroup, add, remove); card.append(actions); groups.append(card);
     }
   }
+  // What the coin list was last drawn from. Choosing another coin from a list drawn from the same records, queue and filter
+  // moves the selection on the two rows concerned instead of drawing the whole list again (K-05); a list that held the
+  // open coin only because it was open is drawn again, since that coin leaves it.
+  let listDrawn = null;
+  function syncCoinListSelection() {
+    const rows = [...$('lot-list').querySelectorAll('.coin-row')];
+    const same = listDrawn && !listDrawn.kept && listDrawn.snapshot === snapshot && listDrawn.queue === $('lot-queue').value && listDrawn.filter === $('lot-filter').value;
+    if (!same || !rows.some((row) => row.dataset.lotId === selection.selectedLotId)) { renderCoinList(); return; }
+    for (const row of rows) { const selected = String(row.dataset.lotId === selection.selectedLotId); if (row.getAttribute('aria-selected') !== selected) row.setAttribute('aria-selected', selected); }
+  }
   function renderLots() {
     pruneComparison(); renderCoinList(); renderGroups(); renderSelectedEditors();
   }
+  // A coin chosen: its row, the groups' "Add selected coin" and its forms.
+  function renderSelection() { pruneComparison(); syncCoinListSelection(); renderGroups(); renderSelectedEditors(); }
   function pruneComparison() {
     const knownLotIds = new Set((snapshot.lots ?? []).map((lot) => lot.id));
     comparisonSelection = comparisonSelection.filter((id) => knownLotIds.has(id));
@@ -752,7 +766,7 @@ async function initWorkspace() {
   }
   const canLeaveSelectedEditors = () => !['lot', 'bid', 'outcome'].some((editor) => dirtyEditors.has(editor)) || confirm('Discard unsaved changes and open another coin?');
   function selectLot(lotId, { focus = true } = {}) {
-    if (lotId === selection.selectedLotId) { selection = { ...selection, mode: 'detail' }; $('coin-workspace').dataset.mobileView = 'detail'; renderLots(); if (focus) $('selected-title').focus?.(); return; }
+    if (lotId === selection.selectedLotId) { selection = { ...selection, mode: 'detail' }; $('coin-workspace').dataset.mobileView = 'detail'; renderSelection(); if (focus) $('selected-title').focus?.(); return; }
     if (lotId !== selection.selectedLotId && !canLeaveSelectedEditors()) return;
     // A lot draft left behind is discarded with its form, so no later save consumes it.
     lotDraftId = null;
@@ -765,7 +779,7 @@ async function initWorkspace() {
     showDetailTab(openingTab(chosen, eventsById.get(chosen?.auctionEventId), chosenDetailTab));
     if (lastLotUndo?.saved?.id !== selection.selectedLotId) $('undo-lot').hidden = true;
     $('coin-workspace').dataset.mobileView = selection.mode;
-    renderLots(); updateDirtyMarks();
+    renderSelection(); updateDirtyMarks();
     if (focus) $('selected-title').focus?.();
   }
   // A coin whose reference names a type on the want list says so under its Reference, draft or saved (G-22): matched by the

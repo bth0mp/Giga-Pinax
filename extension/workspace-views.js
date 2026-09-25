@@ -80,14 +80,29 @@ export function filterWorkspaceLots(lots, query) {
     .some((value) => String(value ?? '').toLocaleLowerCase().includes(needle)));
 }
 
+// A zone's name and whether two names are one zone ask the browser each time; the answers never change while the page is
+// open, so each is asked once (K-05).
+const ZONE_ANSWERS = new Map();
+const zoneAnswer = (key, work) => { if (!ZONE_ANSWERS.has(key)) { if (ZONE_ANSWERS.size >= 500) ZONE_ANSWERS.clear(); ZONE_ANSWERS.set(key, work()); } return ZONE_ANSWERS.get(key); };
+const oneZone = (left, right) => (left === right ? true : zoneAnswer(`same|${left}|${right}`, () => sameZone(left, right)));
+const placeOf = (zone) => zoneAnswer(`place|${zone}`, () => zonePlace(zone));
+
 const OPEN_OUTCOME = (lot) => !lot?.outcome?.status || lot.outcome.status === 'open';
 /** The collector's own time zone, as the browser reports it. */
 export const viewerTimeZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; } };
 const VERB = { 'lot-closes': 'Closes', 'auction-starts': 'Starts', 'auction-day': 'Sale day' };
 const PAST_WORD = { 'lot-closes': 'closed', 'auction-starts': 'started', 'auction-day': 'ended' };
 // A format in the browser's language, or the ISO text the record holds where the language or zone cannot be used.
+// Building a format is most of what writing a date costs, and a list of 800 coins writes thousands (K-05): each is built
+// once per language and options, and kept.
+const FORMATS = new Map();
 const formatWith = (locale, options, date, fallback) => {
-  try { return new Intl.DateTimeFormat(locale, options).format(date); } catch { return fallback; }
+  try {
+    const key = `${locale}|${JSON.stringify(options)}`;
+    let format = FORMATS.get(key);
+    if (!format) { if (FORMATS.size >= 500) FORMATS.clear(); format = new Intl.DateTimeFormat(locale, options); FORMATS.set(key, format); }
+    return format.format(date);
+  } catch { return fallback; }
 };
 /**
  * An auction's day and time as the collector reads it: in the browser's language, at the auction's own wall time,
@@ -100,7 +115,7 @@ const formatWith = (locale, options, date, fallback) => {
 export function eventWhen(event, { now = new Date().toISOString(), locale = 'en-US', timeZone = viewerTimeZone() } = {}) {
   if (!event?.localDate) return { when: 'Time unknown', relative: '', tone: '' };
   const verb = VERB[String(event.eventKind)] ?? 'Auction';
-  const zone = event.timeZone && !sameZone(event.timeZone, timeZone) ? ` ${zonePlace(event.timeZone)}` : '';
+  const zone = event.timeZone && !oneZone(event.timeZone, timeZone) ? ` ${placeOf(event.timeZone)}` : '';
   const timing = eventTiming(event, now);
   const timed = event.precision === 'timed' && Number.isFinite(Date.parse(String(event.startsAt)));
   const day = timed
@@ -141,23 +156,24 @@ export function auctionTimeLabel(event, view) {
 export function auctionQueueForLots(lots, events, queue = 'all-open', now = new Date().toISOString()) {
   const eventById = new Map((events ?? []).map((event) => [event.id, event]));
   const entries = (lots ?? []).map((lot, index) => ({ lot, event: eventById.get(lot.auctionEventId) ?? null, index }));
-  const matches = ({ lot, event }) => {
+  const matches = ({ lot, timing }) => {
     if (queue === 'all-coins') return true;
     if (queue === 'completed') return !OPEN_OUTCOME(lot);
     if (!OPEN_OUTCOME(lot)) return false;
-    if (queue === 'closing-soon') return eventTiming(event, now).state === 'soon';
-    if (queue === 'needs-outcome') return eventTiming(event, now).state === 'ended';
+    if (queue === 'closing-soon') return timing.state === 'soon';
+    if (queue === 'needs-outcome') return timing.state === 'ended';
     if (queue === 'needs-research') return !String(lot.reference ?? '').trim();
     if (queue === 'planned') return Boolean(lot.plannedBid) && !lot.activeBid;
     if (queue === 'active') return Boolean(lot.activeBid);
     return true;
   };
-  // A timed auction sorts at its instant and a date-only day at its own midnight, so the two interleave by time.
-  const sortKey = ({ event }) => { const sortMs = eventTiming(event, now).sortMs; return sortMs === null ? [1, 0] : [0, sortMs]; };
-  return entries.filter(matches).sort((left, right) => {
-    const a = sortKey(left); const b = sortKey(right);
-    return a[0] - b[0] || a[1] - b[1] || left.index - right.index;
-  });
+  // A timed auction sorts at its instant and a date-only day at its own midnight, so the two interleave by time. Each
+  // auction's timing is worked out once, however many coins it holds (K-05).
+  const timings = new Map();
+  const timingOf = (event) => { if (!timings.has(event)) timings.set(event, eventTiming(event, now)); return timings.get(event); };
+  const keyed = entries.filter(({ lot, event }) => matches({ lot, event, timing: timingOf(event) }))
+    .map((entry) => { const sortMs = timingOf(entry.event).sortMs; return { entry, rank: sortMs === null ? 1 : 0, at: sortMs ?? 0 }; });
+  return keyed.sort((left, right) => left.rank - right.rank || left.at - right.at || left.entry.index - right.entry.index).map(({ entry }) => entry);
 }
 
 /**
@@ -456,7 +472,7 @@ export function reminderAtLabel(instant, eventZone, { now = new Date().toISOStri
   // The auction's clock is named by its place, with its own day where that is not the collector's (M3, N14).
   const auctionDay = eventZone && dayOf(at, eventZone) !== dayOf(at)
     ? `${formatWith(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: eventZone }, at, '')} ` : '';
-  const auction = eventZone && !sameZone(eventZone, timeZone) ? ` · ${auctionDay}${time(eventZone)} ${zonePlace(eventZone)}` : '';
+  const auction = eventZone && !oneZone(eventZone, timeZone) ? ` · ${auctionDay}${time(eventZone)} ${placeOf(eventZone)}` : '';
   const untilMs = at.getTime() - Date.parse(now);
   if (untilMs < 0) return { text: `${day} ${time(timeZone)} (your time)${auction} · passed`, tone: 'past' };
   return { text: `${day} ${time(timeZone)} (your time)${auction}`, tone: untilMs < 86400000 ? 'soon' : '' };

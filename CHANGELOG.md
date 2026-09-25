@@ -8,6 +8,7 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ### Changed
 
+- The workspace opens faster with a large collection: dates and time zones are worked out once per page rather than once per row, each auction's timing once per list rather than once per coin, and choosing another coin moves the selection on its row instead of drawing the whole list again. With 800 coins the Watchlist's first coin shows in about 180 ms, where it took about 530 ms.
 - The workspace draws the page you are on, not all six: a save, or a change made in another tab, redraws the route on screen and the open coin's forms, and each other route is drawn when you open it. A save whose change has already reached the page is not read back from storage a second time, a burst of changes (a save and the reminder schedule it leads to) is drawn once, and the want list reads each reference once instead of once per comparison. With 800 coins a saved coin's details are confirmed in about half the time (the redraw itself went from about 450 ms to 50 ms), and another workspace tab or the side panel open beside it costs a quarter of what it did.
 
 ## [0.39.0] - 2026-09-25

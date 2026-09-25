@@ -2142,3 +2142,24 @@ test('the same stored root arriving twice is drawn once', async () => {
   await settle();
   assert.equal(page.$('lot-list').children[0], drawn, 'the list was not drawn again for a root it already shows');
 });
+
+// K-05: choosing a coin moves the selection on its row; the list is drawn again only when what it lists changes.
+test('choosing another coin moves the selection without drawing the list again', async () => {
+  const background = await backgroundWithCoins('Nero, denarius', 'Trajan, sestertius', 'Hadrian, as');
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero, denarius');
+  const rows = () => page.$('lot-list').querySelectorAll('.coin-row');
+  const drawn = rows();
+  await page.openCoin('Trajan, sestertius');
+  assert.deepEqual(rows(), drawn, 'the same rows');
+  assert.deepEqual(rows().map((row) => row.getAttribute('aria-selected')), drawn.map((row) => String(row.textContent.includes('Trajan'))));
+  assert.equal(page.$('selected-title').textContent, 'Trajan, sestertius');
+  // A coin kept in the list only because it was open leaves it when another is chosen.
+  const nero = storedLot(background, 'Nero, denarius');
+  await page.openCoin('Nero, denarius');
+  assert.equal((await background.send({ type: 'lot.outcome.set', lotId: nero.id, expectedRevision: nero.revision, outcome: { status: 'passed' } })).ok, true);
+  await settle();
+  assert.equal(rows().some((row) => row.textContent.includes('Nero')), true, 'the settled coin stays beside its own editor');
+  await page.openCoin('Hadrian, as');
+  assert.equal(rows().some((row) => row.textContent.includes('Nero')), false, 'and leaves once another coin is chosen');
+});
