@@ -114,6 +114,9 @@ export function deriveReminderTriggers(events, _now) {
       let triggerAt;
       if (reminder.kind === 'offset' && event.precision === 'timed') {
         triggerAt = new Date(Date.parse(event.startsAt) - reminder.offsetMinutes * 60000).toISOString();
+      } else if (reminder.kind === 'wall-time' && event.precision === 'date-only' && reminder.collectorTimeZone !== undefined) {
+        triggerAt = ringOnCollectorClock(event, reminder);
+        if (triggerAt === null) continue;
       } else if (reminder.kind === 'wall-time' && event.precision === 'date-only') {
         const resolved = resolveZonedDateTime({
           localDate: shiftDate(event.localDate, -reminder.daysBefore),
@@ -156,6 +159,57 @@ function startOfLocalDay(localDate, timeZone) {
   // A local midnight that does not exist or happens twice still ends the day before it. Taking
   // the later instant keeps an evening reminder deliverable in the zones that change at midnight.
   return (matches.length ? matches : all).at(-1) ?? null;
+}
+
+const RINGS = new Map();
+// The collector's waking hours, for a day whose own reminder time falls nowhere inside it.
+const WAKING = ['08:00', '21:00'];
+
+/**
+ * When a date-only reminder saved with the collector's zone goes off (Q-19, the lead's rule). Its day is the sale day
+ * `daysBefore` days back, in the auction's zone: from that day's start to its end. It rings at its own time (09:00) on
+ * the collector's clock, on the latest of their days where that time falls inside the day. Where none does (a day of 23
+ * hours can miss it), it rings at the latest minute inside the day between 08:00 and 21:00 on their clock, and where no
+ * minute is, or their zone cannot be read, at the day's start. So it is never after the day ends where the auction is,
+ * nor before it starts. Null where the day itself cannot be placed.
+ * @param {AuctionEvent} event
+ * @param {import('./types.js').WallTimeReminder} reminder
+ * @returns {string | null}
+ */
+function ringOnCollectorClock(event, reminder) {
+  const cacheKey = `${event.localDate}|${reminder.daysBefore}|${reminder.localTime}|${event.timeZone}|${reminder.collectorTimeZone}`;
+  if (RINGS.has(cacheKey)) return RINGS.get(cacheKey);
+  const day = shiftDate(event.localDate, -reminder.daysBefore);
+  const start = day === null ? null : startOfLocalDay(day, event.timeZone);
+  const end = start === null ? null : startOfLocalDay(/** @type {string} */ (shiftDate(/** @type {string} */ (day), 1)), event.timeZone);
+  let ring = null;
+  if (start !== null && end !== null && TIME.test(reminder.localTime)) {
+    ring = start;
+    let format = null;
+    try { format = formatter(reminder.collectorTimeZone); } catch { /* the day's start */ }
+    // The collector's days that can reach into the auction's: zones are at most 26 hours apart.
+    const dates = format ? [-2, -1, 0, 1, 2].map((days) => dateParts(shiftDate(day, days))).filter((date) => date !== null) : [];
+    const own = dates.flatMap((date) => zonedCandidates(date, reminder.localTime, format).matches)
+      .filter((instant) => instant >= start && instant < end).sort().at(-1);
+    if (own) ring = own;
+    else {
+      const lastMinute = instantAt(Date.parse(end) - 60000);
+      let latest = null;
+      for (const date of dates) {
+        const opens = zonedCandidates(date, WAKING[0], format);
+        const closes = zonedCandidates(date, WAKING[1], format);
+        const from = opens.matches[0] ?? opens.all.at(-1);
+        const until = closes.matches.at(-1) ?? closes.all[0];
+        if (!from || !until) continue;
+        const last = until < lastMinute ? until : lastMinute;
+        if (last >= from && last >= start && (latest === null || last > latest)) latest = last;
+      }
+      if (latest !== null) ring = latest;
+    }
+  }
+  if (RINGS.size >= 5000) RINGS.clear();
+  RINGS.set(cacheKey, ring);
+  return ring;
 }
 
 function relevanceEnd(trigger) {
@@ -225,8 +279,8 @@ function dateIn(timeZone, instant) {
 /**
  * The words of a reminder's desktop notification, the collector's clock first so a banner that cuts the text keeps it.
  * A timed auction: `Closes Fri 16 Oct, 8:00 your time — 14:00 Zurich`. A date-only sale day is a calendar day in the
- * auction's zone and its reminder goes off at a wall time there: `Sale day Fri 2 Oct — Thu 1 Oct 10:00 your time,
- * 9:00 London`. Your day is named where it is not the sale day (or, for a timed auction, always), the auction's where it
+ * auction's zone; its reminder goes off at a wall time on your clock (`Sale day Fri 2 Oct — Thu 1 Oct 9:00 your time,
+ * 14:00 London`) or, saved before Q-19, at one there (`… Thu 1 Oct 10:00 your time, 9:00 London`). Your day is named where it is not the sale day (or, for a timed auction, always), the auction's where it
  * is not yours; the auction's clock and place only where its zone is not yours and the browser can read it. Nothing
  * here moves when a reminder goes off.
  * @param {ReminderTrigger} trigger

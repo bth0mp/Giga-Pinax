@@ -47,7 +47,7 @@ Giga Pinax does not place, change or cancel bids, make purchases, offer investme
 **Single purpose:** Help ancient-coin collectors research catalogue references and sale prices, then organize auction and collection work in a local workspace.
 
 - `contextMenus`: starts user-invoked highlighted-text research or an editable current-lot draft.
-- `storage`: stores preferences, watchlists, bid plans, reminders, notes, provenance, measurements, external photo links, fee estimates, comparable sales, collection history and the want list locally.
+- `storage`: stores preferences, watchlists, bid plans, reminders (with the browser's time-zone name, such as `Europe/London`, so a sale day's reminders go off on the collector's clock), notes, provenance, measurements, external photo links, fee estimates, comparable sales, collection history and the want list locally.
 - `activeTab` and `scripting`: temporarily extract the current page after an explicit collector action so its structured data, metadata, visible text and URL can be reviewed before research or saving. A page the extension may not read, such as a browser settings page or a local file, is refused rather than captured.
 - `alarms`: schedules local reminder due checks.
 - `sidePanel`: opens the research workspace in Brave/Chrome's side panel.
@@ -57,7 +57,7 @@ Giga Pinax does not place, change or cancel bids, make purchases, offer investme
 
 The permission set is unchanged from 0.33.0. The bundled catalogue data removed network requests, not permissions: the online fallback still needs the same hosts. Whether `www.acsearch.info` should become an optional host permission, asked for on first use, is written up for the owner's decision in [ACSEARCH-PERMISSION.md](ACSEARCH-PERMISSION.md); nothing has changed yet.
 
-In the Chrome privacy questionnaire, disclose website content and financial/payment information: selected page text and URLs are handled after explicit action, provider responses are processed, and local bid, fee, purchase and outcome fields describe financial activity. Do not claim that no data is handled or that every operation is local. Based on the reviewed behavior, the extension has no personally identifiable information, authentication information, personal communications, location, web-history tracking, or interaction telemetry use.
+In the Chrome privacy questionnaire, disclose website content and financial/payment information: selected page text and URLs are handled after explicit action, provider responses are processed, and local bid, fee, purchase and outcome fields describe financial activity. Do not claim that no data is handled or that every operation is local. Based on the reviewed behavior, the extension has no personally identifiable information, authentication information, personal communications, web-history tracking, or interaction telemetry use, and no location use beyond the browser's time-zone name (a region such as `America/New_York`), which is kept in local extension storage with a sale day's reminders and in the backups the collector exports, and is never transmitted.
 
 Certify only after comparing these statements with the final package. Data is used for the described product features, is not sold, and is not used for advertising, creditworthiness or lending. Necessary transfers occur only for requested research, requested GitHub downloads, comparison images from collector-specified servers, or, with **Show specimen photos** switched on, museum specimen photos.
 

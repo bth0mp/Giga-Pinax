@@ -645,12 +645,13 @@ export function memoryStorageArea() {
 
 // The background worker as far as a page sees it: one writer over one storage area. `send` is any
 // other view writing — a second workspace tab, the popup — and returns the writer's reply.
-export async function createWorkspaceBackground({ now = '2026-09-12T12:00:00.000Z', newId = testUuid } = {}) {
+export async function createWorkspaceBackground({ now = '2026-09-12T12:00:00.000Z', newId = testUuid, timeZone = undefined } = {}) {
   const { COMMAND_TYPES, createCommandWriter, STORAGE_KEY } = await import('../../extension/store.js');
   const storage = memoryStorageArea();
   // The browser's session area, which the popup writes its last median into (G-04) and the workspace reads.
   const session = memoryStorageArea();
-  const writer = createCommandWriter(storage, { now: () => now, newId });
+  // A timeZone is the collector's, as background.js gives the browser's: a date-only auction saved with one rings on it (Q-19).
+  const writer = createCommandWriter(storage, { now: () => now, newId, ...(timeZone === undefined ? {} : { timeZone }) });
   const holds = [];
   return {
     storage,

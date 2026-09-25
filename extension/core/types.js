@@ -215,9 +215,10 @@
 
 /**
  * A reminder before an auction event: an offset before a timed event, or a wall time some days before
- * a date-only one.
+ * a date-only one. A wall time saved with the collector's zone rings on their clock (reminders.js);
+ * one saved without it, as every one before Q-19 was, rings at that time in the auction's zone.
  * @typedef {{ id: string, kind: 'offset', offsetMinutes: number }} OffsetReminder
- * @typedef {{ id: string, kind: 'wall-time', daysBefore: number, localTime: string }} WallTimeReminder
+ * @typedef {{ id: string, kind: 'wall-time', daysBefore: number, localTime: string, collectorTimeZone?: string }} WallTimeReminder
  * @typedef {OffsetReminder | WallTimeReminder} Reminder
  */
 
@@ -529,6 +530,8 @@
  * @typedef {object} CommandContext
  * @property {string | (() => string)} now
  * @property {() => string} newId
+ * @property {string | (() => string | undefined)} [timeZone] the collector's zone, which a date-only auction's reminders
+ *   take when it is saved (Q-19, store-schedule.js); without one they ring at their time in the auction's zone
  */
 
 /**

@@ -15,7 +15,7 @@ import {
   preferenceFields,
 } from './store-builders.js';
 import { missingPartner, readyToRestore, restoreClearedReferences } from './store-restore.js';
-import { reconcileIntoSnapshot } from './store-schedule.js';
+import { reconcileIntoSnapshot, ringOnCollectorClock } from './store-schedule.js';
 /**
  * @typedef {import('./core/types.js').Snapshot} Snapshot
  * @typedef {import('./core/types.js').Command} Command
@@ -445,6 +445,7 @@ function mutation(snapshot, command, context) {
         delete eventDraft.localTime;
         delete eventDraft.startsAt;
       }
+      let existing = null;
       if (command.expectedRevision === null) {
         if (own(eventDraft, 'id')) return fail('validation', 'New events cannot supply a durable ID.', 'event.id');
         value = eventFromDraft(eventDraft, null, context);
@@ -452,9 +453,11 @@ function mutation(snapshot, command, context) {
       } else {
         const found = findRecord(next.auctionEvents, eventDraft.id, command.expectedRevision, 'event');
         if (!found.ok) return found;
-        value = eventFromDraft(eventDraft, found.value.record, context);
+        existing = found.value.record;
+        value = eventFromDraft(eventDraft, existing, context);
         next.auctionEvents[found.value.index] = value;
       }
+      ringOnCollectorClock(value, existing, context);
       const localTimes = validateEventLocalTimes(value);
       if (!localTimes.ok) return fail('validation', localTimes.error.message, localTimes.error.path);
       const retainedReminderIds = new Set(value.reminders.map(({ id }) => id));
