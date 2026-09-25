@@ -1560,3 +1560,44 @@ test('a save whose bridge throws says so in words, keeps its request for the ret
   assert.equal((await saver({ reference: 'RIC 306' })).ok, true);
   assert.deepEqual(sent, ['request-draft', 'request-draft']);
 });
+
+// Loop 6 (X-05, popup side): a Save whose reply never came left the button disabled for ever, with nothing said. After eight seconds the line under
+// it says the save got no answer and offers the same request again; the button is back, and the retry stores one coin.
+test('a save with no answer within eight seconds says so under Watch, gives Watch back, and retries the same request', async () => {
+  const background = await createWorkspaceBackground();
+  const realSetTimeout = globalThis.setTimeout;
+  const timers = [];
+  globalThis.setTimeout = (callback, wait) => { timers.push({ callback, wait }); return timers.length; };
+  try {
+    const commands = [];
+    let hang = true;
+    const page = await loadCompanion({ sendMessage: async (command) => {
+      commands.push(structuredClone(command));
+      if (command.type === 'lot.save' && hang) { hang = false; return new Promise(() => {}); }
+      return background.send(command);
+    } });
+    page.card(neroCard);
+    const clicked = page.element('companion-save-watchlist').emit('click');
+    await settleAll();
+    assert.equal(page.element('companion-save-watchlist').disabled, true, 'held while the save waits');
+    const deadline = timers.find(({ wait }) => wait === 8000);
+    assert.ok(deadline, 'the wait has a deadline');
+    deadline.callback();
+    await clicked;
+    await settleAll();
+    const hint = page.element('companion-save-hint');
+    assert.equal(hint.hidden, false);
+    assert.equal(lineParts(hint), 'The save didn’t get an answer. · [Retry the same request]');
+    assert.equal(page.element('companion-save-watchlist').disabled, false);
+    assert.equal(page.element('companion-save-watchlist').hidden, false);
+    await lineButton(hint, 'Retry the same request').emit('click');
+    await settleAll();
+    const saves = commands.filter(({ type }) => type === 'lot.save');
+    assert.equal(saves.length, 2);
+    assert.equal(saves[0].requestId, saves[1].requestId);
+    assert.equal(background.root().lots.length, 1);
+    assert.equal(lineParts(page.element('companion-saved-line')), '[Watching] · [Open] · [Undo]');
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+});

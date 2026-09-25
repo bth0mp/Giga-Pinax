@@ -146,6 +146,21 @@ export function replaceAuctionContextInPayload(payload, auctionContext) {
 // X-11: what the collector is told when the background never answered, or the message port closed under the save: the raw browser error ("The message
 // port closed before a response was received.") is no sentence for him. It names the button to press again, and says why pressing it is safe.
 export const noAnswerMessage = (button) => `Giga Pinax’s background didn’t answer. Select ${button} again — the same request is retried, never saved twice.`;
+// X-05: a save whose answer never comes (a worker that died mid-command) is waited for this long, never for ever: then it is said under the button
+// that was pressed, with the same request offered again, and the button comes back.
+export const SAVE_ANSWER_MS = 8000;
+const LATE = Symbol('late');
+// A reply, or LATE once the wait is over. The send keeps going: a reply that comes later is the store's to keep, and the next snapshot shows it.
+async function answerWithin(send, ms) {
+  let timer = 0;
+  const sent = Promise.resolve().then(send);
+  sent.catch(() => {});
+  try {
+    return await Promise.race([sent, new Promise((resolve) => { timer = setTimeout(() => resolve(LATE), ms); })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // Which coin a payload is about: a storage outcome nobody can tell (unknown) keeps its own payload and request id, so the same save is retried rather
 // than written twice - but only for that coin. A different reference or page is a different save and starts its own request.
@@ -731,7 +746,13 @@ async function initCompanionPopup() {
 
   const draftSaver = bridge && createDraftSaver({
     newRequestId: bridge.newRequestId,
-    sendCommand: bridge.sendCommand,
+    // X-05: a draft save with no answer within the wait is no answer, and keeps its request for the retry.
+    sendCommand: async (command) => {
+      const reply = await answerWithin(() => bridge.sendCommand(command), SAVE_ANSWER_MS);
+      if (reply !== LATE) return reply;
+      void recordDiagnostic({ area: 'store', code: 'timeout' });
+      return undefined;
+    },
     openDraft: (id) => openExtensionPage(`workspace.html#lot-draft=${encodeURIComponent(id)}`),
   });
   let savePending = false;
@@ -776,15 +797,28 @@ async function initCompanionPopup() {
   let directRequest = null;
   // X-11: no reply, or an exception from the bridge, is one sentence that names the button to press again; the kind of failure goes to the local
   // diagnostics, never the browser's words.
-  const sendDirect = async (command, button = 'Watch') => {
+  // X-05: a save waits SAVE_ANSWER_MS for its answer and no longer; it is then said as late, and its request kept for the retry.
+  const LATE_MESSAGE = 'The save didn’t get an answer.';
+  const sendDirect = async (command, button = 'Watch', wait = 0) => {
     try {
-      const reply = await bridge.sendCommand(command);
+      const reply = wait ? await answerWithin(() => bridge.sendCommand(command), wait) : await bridge.sendCommand(command);
+      if (reply === LATE) {
+        void recordDiagnostic({ area: 'store', code: 'timeout' });
+        return { ok: false, outcome: 'unknown', late: true, message: `${LATE_MESSAGE} Select ${button} again — the same request is retried, never saved twice.` };
+      }
       if (reply) return reply;
     } catch { /* said below, as no answer */ }
     void recordDiagnostic({ area: 'store', code: 'not-saved' });
     return { ok: false, outcome: 'unknown', message: noAnswerMessage(button) };
   };
-  const saveDirect = async (payload, anchor) => {
+  // Late, under the card's own button: the sentence and the one verb that gets out, the same request sent again.
+  const sayLate = (anchor, retry) => {
+    const line = $(anchor);
+    speak(LATE_MESSAGE);
+    fillLine(line, [LATE_MESSAGE, { label: 'Retry the same request', name: 'Retry the same request; it is never saved twice', action: retry }]);
+    line.classList.toggle('said-error', true);
+  };
+  const saveDirect = async (payload, anchor, retry = null) => {
     const refuse = (message) => { if (anchor) announce(message, true, anchor); return { ok: false, message }; };
     if (!bridge || storageUnavailable || !payload) return refuse(STORAGE_UNAVAILABLE);
     if (savePending) return refuse(PENDING_MESSAGE);
@@ -795,9 +829,10 @@ async function initCompanionPopup() {
     savePending = true;
     holdSaveButtons();
     try {
-      const reply = await sendDirect({ type: 'lot.save', requestId: directRequest.requestId, expectedRevision: null, lot: built.lot });
+      const reply = await sendDirect({ type: 'lot.save', requestId: directRequest.requestId, expectedRevision: null, lot: built.lot }, 'Watch', SAVE_ANSWER_MS);
       if (!reply.ok) {
         if ((reply.outcome ?? reply.error?.outcome) !== 'unknown') directRequest = null;
+        if (reply.late && anchor && retry) { sayLate(anchor, retry); return { ok: false, late: true, message: reply.message }; }
         return refuse(reply.message || reply.error?.message || 'Couldn’t save this coin to the watchlist.');
       }
       directRequest = null;
@@ -846,15 +881,16 @@ async function initCompanionPopup() {
       else fillLine(line, [watchingPill('Watching', 'On your watchlist', entry.lot.id, anchor)]);
     }, UNDO_FOR_MS);
   };
-  $('companion-save-watchlist').addEventListener('click', async () => {
+  const watchCard = async () => {
     const payload = safeCard;
     // A card carrying a captured page's values goes to the workspace for review, as before.
     if (!savesDirectly(payload)) { void saveWatchlistDraft(payload); return; }
-    const saved = await saveDirect(payload, 'companion-save-hint');
+    const saved = await saveDirect(payload, 'companion-save-hint', () => { if (safeCard === payload) void watchCard(); });
     if (!saved.ok || safeCard !== payload) return;
     confirmSaved({ where: 'card', lot: saved.lot, event: null, timer: 0 }, $('companion-saved-line'), 'companion-save-hint');
     $('companion-save-watchlist').hidden = true;
-  });
+  };
+  $('companion-save-watchlist').addEventListener('click', () => watchCard());
   // Watch on an upcoming acsearch lot (popup.js): saved in one step with the lot's title, the card's reference and the lot's own acsearch page, said
   // under the list with Open and Undo, and its sale day offered as a date-only auction to attach with Add. Nothing opens by itself. No captured page
   // rides along, since the lot is acsearch's. A failure is handed back, to be shown beside the list Watch was pressed in.
