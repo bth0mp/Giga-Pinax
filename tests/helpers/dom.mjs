@@ -726,6 +726,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
   const calculatorValues = [];
   const timers = [];
   const scrolls = [];
+  const opened = [];
   const windowListeners = new Map();
   const browser = background ? fakeExtensionRuntime(background, commands) : null;
   const bridge = browser ? loadBridge(browser) : null;
@@ -759,6 +760,8 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     setTimeout: (callback, ms = 0) => { timers.push({ callback, ms }); return timers.length; },
     clearTimeout: (handle) => { if (timers[handle - 1]) timers[handle - 1].callback = null; },
     location,
+    // What the page opens in a window of its own (the popup's lookup), recorded for a test to read.
+    open: (url, target, features) => { opened.push({ url, target, features }); return null; },
     // What the page scrolls the window by, recorded for a test to read.
     scrollBy: (x, y) => { scrolls.push([x, y]); },
     addEventListener(type, listener) {
@@ -778,7 +781,7 @@ export async function mountWorkspace({ background = null, hash = '', confirmAnsw
     await $(form).emit('input', { target: control });
   };
   return {
-    $, document, location, commands, prompts, browser, calculatorValues, timers, scrolls,
+    $, document, location, commands, prompts, browser, calculatorValues, timers, scrolls, opened,
     runTimers() { for (const timer of timers.splice(0)) timer.callback?.(); },
     status: () => $('workspace-status').textContent,
     conflictBanner: () => ($('conflict-note').hidden ? '' : $('conflict-editors').textContent),

@@ -358,7 +358,7 @@ test('the open wants of a type are the ones not yet found; a stored want no rule
   assert.equal(wantBadgeText(openWantsFor(wants, 'RIC I² Nero 306')), 'On your want list · up to €800.00 · VF or better');
   assert.equal(wantBadgeText([makeWant()]), 'On your want list');
   assert.equal(wantBadgeText([]), '');
-  assert.equal(wantTermsText(makeWant({ minGrade: 'F' })), 'Fine or better');
+  assert.equal(wantTermsText(makeWant({ minGrade: 'F' })), 'F or better');
   assert.equal(wantTermsText(makeWant({ maxPrice: { currency: 'CHF', minor: 120000 } })), `up to ${formatMoney({ currency: 'CHF', minor: 120000 }, 'en-US', { narrow: true })}`);
 });
 
@@ -480,7 +480,7 @@ test('a won coin of the wanted type is offered as what found it, and Want again 
   await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'ric ii trajan 253' } });
   const page = await mountWorkspace({ background, hash: '#wants' });
   const card = cardFor(page, 'ric ii trajan 253');
-  assert.deepEqual(card.querySelectorAll('button').map((button) => button.textContent), ['Mark found: Trajan denarius, Künker 341', 'Edit', 'Remove'],
+  assert.deepEqual(card.querySelectorAll('button').map((button) => button.textContent), ['Mark found: Trajan denarius, Künker 341', 'Look up ↗', 'Search acsearch ↗', 'Edit', 'Remove'],
     'only the coin of the type is offered');
   await buttonIn(card, 'Mark found: Trajan denarius, Künker 341').click(); await settle();
   const [want] = background.root().wants;
@@ -721,4 +721,70 @@ test('the want form names Newell Demetrius where it lists what can be wanted, an
   assert.equal(wantReferenceProblem('SNG Cop 123'), '“SNG Cop 123” is not read as one catalogue type. A want is a RIC, RRC, Price, SC, CPE, Newell Demetrius or Bopearachchi reference, such as RIC I² Nero 306, RRC 44/5 or Newell Demetrius 45.');
   const page = await mountWorkspace({ background: await createWorkspaceBackground(), hash: '#wants' });
   assert.match(page.$('want-reference-note').textContent, /Newell Demetrius/);
+});
+
+// --- Loop cycle 5: the want list as a hunting board (H-08, H-18) ------------------------------------------
+
+test('a want card shows the watched coins of its type, since when it is wanted, and where to look for it', async () => {
+  const background = await createWorkspaceBackground();
+  const event = await background.send({ type: 'event.save', expectedRevision: null, event: { name: 'Roma E-Sale 130', eventKind: 'lot-closes', precision: 'timed', localDate: '2027-03-13', localTime: '15:00', timeZone: 'Europe/London', reminderScope: 'standalone', reminders: [] } });
+  const nero = (await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero As, Roma 130', reference: 'RIC I (second edition) Nero 306', sourceLinks: [], auctionEventId: event.value.id } })).value;
+  await background.send({ type: 'bid.place', lotId: nero.id, expectedRevision: nero.revision, activeBid: { amount: { currency: 'GBP', minor: 65000 }, buyerPremiumBps: 2000 } });
+  await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'A neighbour', reference: 'RIC I² Nero 306a', sourceLinks: [] } });
+  await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RIC I² Nero 306', minGrade: 'VF' } });
+  const page = await mountWorkspace({ background, hash: '#wants', language: 'en-GB' });
+  const card = cardFor(page, 'RIC I² Nero 306');
+  assert.equal(card.querySelector('.want-since').textContent, 'wanted since 12 Sept 2026');
+  assert.equal(card.querySelector('.want-terms').textContent, 'VF or better', 'the grade as every page writes it');
+  const rows = card.querySelectorAll('.want-coin');
+  assert.equal(rows.length, 1, 'the coin of the type, not its neighbour');
+  assert.equal(rows[0].querySelector('.want-coin-reference').textContent, 'RIC I (second edition) Nero 306');
+  assert.equal(rows[0].querySelector('.want-coin-amount').textContent, '£650.00');
+  assert.equal(rows[0].querySelector('.status-pill').textContent, 'Bid active');
+  assert.match(rows[0].querySelector('.want-coin-when').textContent, /^Closes Sat 13 Mar, /);
+  await buttonIn(card, 'Look up ↗').click(); await settle();
+  assert.deepEqual(page.opened, [{ url: 'popup.html?panel=1&reference=RIC%20I%C2%B2%20Nero%20306', target: '_blank', features: 'noopener' }]);
+  const tabs = [];
+  page.browser.tabs = { create: async (options) => { tabs.push(options.url); } };
+  await buttonIn(card, 'Search acsearch ↗').click(); await settle();
+  assert.equal(tabs.length, 1);
+  assert.equal(new URL(tabs[0]).searchParams.get('term'), 'RIC I² Nero 306');
+  await rows[0].click(); await settle();
+  assert.equal(page.location.hash, '#watchlist');
+  assert.equal(page.$('selected-title').textContent, 'Nero As, Roma 130', 'the row opens its coin');
+  assert.deepEqual(page.commands.filter(({ type }) => !['snapshot.get'].includes(type)), [], 'nothing was written or fetched through the store');
+});
+
+test('a win of a wanted type offers to mark the want found from the outcome’s own line', async () => {
+  const background = await createWorkspaceBackground();
+  const lot = (await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Nero As', reference: 'RIC I² Nero 306', sourceLinks: [] } })).value;
+  await background.send({ type: 'want.save', expectedRevision: null, want: { reference: 'RIC I² Nero 306' } });
+  const page = await mountWorkspace({ background, hash: '#watchlist' });
+  await page.openCoin('Nero As');
+  page.$('outcome-form').elements.status.value = 'won';
+  await page.type('outcome-form', 'hammer', '240');
+  await page.type('outcome-form', 'premium', '20');
+  page.$('outcome-form').elements.addToCollection.checked = false;
+  await page.submit('outcome-form');
+  const line = page.$('outcome-action-status');
+  assert.equal(line.textContent, 'Outcome saved · Won at $240.00 · in History · now under Completed Open Mark found on your want list');
+  await line.querySelectorAll('button').find((button) => button.textContent === 'Mark found on your want list').click(); await settle();
+  assert.equal(background.root().wants[0].foundLotId, lot.id);
+  assert.equal(page.$('outcome-action-status').textContent, 'Found on your want list · RIC I² Nero 306');
+  // A win of a type nobody wants offers nothing more.
+  const other = (await background.send({ type: 'lot.save', expectedRevision: null, lot: { title: 'Trajan', reference: 'RIC II Trajan 254', sourceLinks: [] } })).value;
+  await settle();
+  page.$('lot-queue').value = 'all-coins'; await page.$('lot-queue').emit('change');
+  await page.openCoin('Trajan');
+  page.$('outcome-form').elements.status.value = 'won';
+  page.$('outcome-form').elements.addToCollection.checked = false;
+  await page.submit('outcome-form');
+  assert.equal(background.root().lots.find(({ id }) => id === other.id).outcome.status, 'won');
+  assert.equal(page.$('outcome-action-status').querySelectorAll('button').map((button) => button.textContent).join(), 'Open');
+});
+
+test('the want form lists grades by their abbreviation first, as the card and the badge write them', async () => {
+  const page = await mountWorkspace({ background: await createWorkspaceBackground(), hash: '#wants' });
+  assert.deepEqual(page.$('want-form').elements.minGrade.options.map((option) => option.textContent), ['Any grade', 'F · Fine', 'VF · Very Fine', 'EF · Extremely Fine', 'AU · About Uncirculated']);
+  assert.equal(wantTermsText(makeWant({ minGrade: 'AU' })), 'AU or better');
 });

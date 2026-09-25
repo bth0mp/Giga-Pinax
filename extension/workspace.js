@@ -220,10 +220,10 @@ async function initWorkspace() {
   // happened to them, with the figure, and the page's own status line keeps only page-level notices. A button - Open,
   // Undo - may follow the words.
   const FORM_STATUS = { lot: 'lot-action-status', bid: 'bid-action-status', outcome: 'outcome-action-status', want: 'want-form-status', wantlist: 'want-action-status' };
-  const formStatus = (editor, message, { error = false, action = null } = {}) => {
+  const formStatus = (editor, message, { error = false, action = null, actions = [] } = {}) => {
     const line = $(FORM_STATUS[editor]);
     line.replaceChildren(document.createTextNode(message));
-    if (action) { const button = text('button', action.label, 'quiet'); button.type = 'button'; button.addEventListener('click', action.run); line.append(document.createTextNode(' '), button); }
+    for (const each of [...(action ? [action] : []), ...actions]) { const button = text('button', each.label, 'quiet'); button.type = 'button'; button.addEventListener('click', each.run); line.append(document.createTextNode(' '), button); }
     line.classList.toggle('error', error);
     $('announcement').textContent = '';
     requestAnimationFrame(() => { $('announcement').textContent = message; });
@@ -485,13 +485,18 @@ async function initWorkspace() {
     });
   });
 
-  const openSource = async (source) => {
-    ensureActiveQuery();
-    const built = buildUserInitiatedSearch(source, $('research-query').value);
-    if (!built.ok) return announce(built.error.message, true);
+  // A search the collector asked for, of the edited query only, in a tab of its own.
+  const openSearch = async (source, query) => {
+    const built = buildUserInitiatedSearch(source, query);
+    if (!built.ok) { announce(built.error.message, true); return false; }
     const tabs = globalThis.browser?.tabs ?? globalThis.chrome?.tabs;
     if (tabs?.create) await tabs.create({ url: built.value.url });
     else globalThis.open(built.value.url, '_blank', 'noopener,noreferrer');
+    return true;
+  };
+  const openSource = async (source) => {
+    ensureActiveQuery();
+    if (!await openSearch(source, $('research-query').value)) return;
     if (researchDraftId) { const draftId = researchDraftId; researchDraftId = null; void send({ type: 'draft.consume', requestId: requestId(), draftId }); }
     announce(`${source === 'coinarchives' ? 'CoinArchives' : 'acsearch'} search opened. Only the edited query was sent.`);
   };
@@ -1480,7 +1485,14 @@ async function initWorkspace() {
     const hammer = lot.outcome.hammer ? ` at ${money(lot.outcome.hammer)}` : '';
     const moved = status !== 'open' && !['completed', 'all-coins'].includes($('lot-queue').value) ? ' · now under Completed' : '';
     const history = status === 'open' ? '' : ' · in History';
-    formStatus('outcome', `Outcome saved · ${words}${hammer}${history}${moved}`, status === 'open' ? {} : { action: { label: 'Open', run: () => { routeChangeFromNav = false; location.hash = '#history'; setRoute(); } } });
+    const actions = status === 'open' ? [] : [{ label: 'Open', run: () => { routeChangeFromNav = false; location.hash = '#history'; setRoute(); } }];
+    // A win of a wanted type is the moment of finding it (H-08): one click marks the want found by this coin.
+    const [wanted] = status === 'won' ? openWantsFor(snapshot.wants, lot.reference) : [];
+    if (wanted) {
+      actions.push({ label: 'Mark found on your want list', run: () => void send({ type: 'want.found', requestId: requestId(), wantId: wanted.id, expectedRevision: wanted.revision, lotId: lot.id }, 'outcome')
+        .then((reply) => { if (reply?.ok) formStatus('outcome', `Found on your want list · ${wanted.reference}`); }) });
+    }
+    formStatus('outcome', `Outcome saved · ${words}${hammer}${history}${moved}`, { actions });
   };
 
   function resetEditor(editor) {
@@ -1620,6 +1632,8 @@ async function initWorkspace() {
     button.addEventListener('click', run);
     return button;
   };
+  // A coin opened from another route, as the Watchlist opens it.
+  const openCoin = (lotId) => { routeChangeFromNav = false; location.hash = '#watchlist'; setRoute(); selectLot(lotId, { focus: false }); };
   const openCoinLink = (lot) => {
     const link = text('a', lot.title); link.href = `#watchlist?lot=${lot.id}`;
     link.addEventListener('click', () => { routeChangeFromNav = false; selectLot(lot.id, { focus: false }); });
@@ -1639,11 +1653,28 @@ async function initWorkspace() {
       list.append(text('p', 'No wants yet. Add a reference you are looking for, such as RIC II Trajan 253: a card, an upcoming acsearch lot or a captured lot of that type then says “On your want list”. Nothing is searched for you, and nothing leaves this device.', 'empty-row'));
       return;
     }
-    for (const { want, terms, found, foundStatus, wonCoins } of rows) {
+    for (const { want, terms, found, foundStatus, wonCoins, watched } of rows) {
       const card = text('article', '', 'record want-record'); card.dataset.wantId = want.id;
-      card.append(text('h3', want.reference));
+      const heading = text('div', '', 'want-heading');
+      heading.append(text('h3', want.reference));
+      if (want.createdAt) heading.append(text('span', `wanted since ${dayText(want.createdAt)}`, 'want-since'));
+      card.append(heading);
       if (terms) card.append(text('p', terms, 'want-terms'));
       if (want.notes) card.append(text('p', want.notes, 'want-notes'));
+      // The hunt so far (H-08): the coins of the type on the watchlist, each as its Watchlist row reads, and opening it.
+      if (watched.length) {
+        const coins = text('div', '', 'want-coins'); coins.setAttribute('role', 'list'); coins.setAttribute('aria-label', `Watched coins of ${want.reference}`);
+        for (const lot of watched) {
+          const row = text('button', '', 'want-coin'); row.type = 'button'; row.setAttribute('role', 'listitem');
+          row.append(text('span', lot.reference || lot.title, 'want-coin-reference'));
+          const amount = lotRowAmountLabel(lot, money); if (amount) row.append(text('span', amount, 'want-coin-amount'));
+          row.append(eventLine(eventsById.get(lot.auctionEventId), 'want-coin-when', 'span', false), statusPill(lot));
+          row.title = lot.title;
+          row.addEventListener('click', () => openCoin(lot.id));
+          coins.append(row);
+        }
+        card.append(coins);
+      }
       const actions = text('div', '', 'actions');
       if (want.foundLotId) {
         const line = text('p', '', 'want-found'); line.append(text('span', 'Found', 'pill'), document.createTextNode(` ${dayText(want.foundAt)} · `));
@@ -1658,6 +1689,12 @@ async function initWorkspace() {
             .then((reply) => { if (reply?.ok) formStatus('wantlist', `Found · ${want.reference} · ${lot.title}`); }), 'secondary'));
         }
       }
+      // Where to look for it, nothing fetched until the collector asks: the popup's card and prices, and acsearch.
+      const lookUp = text('button', 'Look up ↗', 'quiet want-look'); lookUp.type = 'button';
+      lookUp.addEventListener('click', () => { window.open(`popup.html?panel=1&reference=${encodeURIComponent(want.reference)}`, '_blank', 'noopener'); });
+      const search = text('button', 'Search acsearch ↗', 'quiet want-look'); search.type = 'button';
+      search.addEventListener('click', () => void openSearch('acsearch', want.reference));
+      if (!want.foundLotId) actions.append(lookUp, search);
       actions.append(wantAction('Edit', () => openWantForm(want)), wantAction('Remove', () => {
         if (!confirm(`Remove “${want.reference}” from your want list?`)) return;
         void send({ type: 'want.delete', requestId: requestId(), wantId: want.id, expectedRevision: want.revision }, 'wantlist')

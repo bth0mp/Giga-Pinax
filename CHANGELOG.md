@@ -6,6 +6,10 @@ Each date is the date of that version's release tag. Every release also carries 
 
 ## [Unreleased]
 
+### Added
+
+- The Want list is a hunting board: each want says since when it is wanted, lists the coins of its type on your watchlist as rows with their bid, sale and status, each opening its coin, and offers **Look up ↗** (the popup's card and prices) and **Search acsearch ↗** for the type. Saving a coin's outcome as **Won** for a wanted type offers **Mark found on your want list** in the outcome's own line. Grades are written one way: `VF · Very Fine` in the form's list and `VF or better` on the card and the badge (`F or better`, where Fine was spelled out before).
+
 ### Changed
 
 - A want is checked against the bundled catalogue when you save it, so it is one a card can match. A reference the catalogue holds under another title is saved under that title, and the page says so: `RIC I Nero 306`, as CNG and Roma cite Julio-Claudian coins, becomes `RIC I² Nero 306`, and `RIC V.2 Probus 157` becomes `RIC V Probus 157`. One held in several volumes is offered as a choice, and one no card could ever match is refused with the reason. A found want keeps its reference, and a Bopearachchi want, which the bundle cannot check, is saved as written.

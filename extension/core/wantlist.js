@@ -15,12 +15,13 @@ import { formatMoney, parseMoney } from './money.js';
  * @typedef {{ catalogue: string, number: string, volume?: string, section?: string, range?: string, dottedLetter?: string }} Reading
  */
 
-/** The lowest grade a want asks for, as the Want list writes it: "VF or better". */
-export const WANT_GRADE_LABELS = Object.freeze({ F: 'Fine', VF: 'VF', EF: 'EF', AU: 'AU' });
-/** The same grades as the form offers them, named in full. */
-export const WANT_GRADE_CHOICES = Object.freeze(WANT_GRADES.map((grade) => Object.freeze({
-  value: grade, label: ({ F: 'Fine (F) or better', VF: 'Very Fine (VF) or better', EF: 'Extremely Fine (EF) or better', AU: 'About Uncirculated (AU) or better' })[grade],
-})));
+// One table for the four grades a want can ask for (H-18): the abbreviation a card, a badge and a want's terms write ("VF or
+// better"), and the name the form's list gives it beside the abbreviation ("VF · Very Fine").
+const GRADE_NAMES = Object.freeze({ F: 'Fine', VF: 'Very Fine', EF: 'Extremely Fine', AU: 'About Uncirculated' });
+/** The lowest grade a want asks for, as every page writes it: "VF or better". */
+export const WANT_GRADE_LABELS = Object.freeze(Object.fromEntries(WANT_GRADES.map((grade) => [grade, grade])));
+/** The same grades as the form offers them, the abbreviation first: "VF · Very Fine". */
+export const WANT_GRADE_CHOICES = Object.freeze(WANT_GRADES.map((grade) => Object.freeze({ value: grade, label: `${grade} · ${GRADE_NAMES[grade]}` })));
 
 const field = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const blank = (value) => !field(value);
@@ -214,6 +215,18 @@ export function wantTermsText(want, locale = 'en-US') {
 export function wantBadgeText(matches, locale = 'en-US') {
   if (!matches?.length) return '';
   return ['On your want list', wantTermsText(matches[0], locale)].filter(Boolean).join(' · ');
+}
+
+/**
+ * The coins still open on the watchlist that are the want's type (H-08): what the hunt has turned up so far, in the order
+ * they were saved.
+ * @param {Want | null | undefined} want
+ * @param {Lot[] | null | undefined} lots
+ * @returns {Lot[]}
+ */
+export function watchedLotsFor(want, lots) {
+  const open = (lot) => !lot?.outcome?.status || lot.outcome.status === 'open';
+  return (Array.isArray(lots) ? lots : []).filter((lot) => open(lot) && sameWantedType(lot?.reference, want?.reference));
 }
 
 /**

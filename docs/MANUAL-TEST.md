@@ -313,3 +313,7 @@ Open the workspace from **Watchlist** in the popup. Have at least two saved coin
     Add the want `RIC I Nero 306` after removing the first. *Expected:* "Want saved · RIC I² Nero 306 · you wrote
     RIC I Nero 306; this is how the catalogue titles it". Add `RIC II Trajan 99999`. *Expected:* refused beside **Save
     want**: it is not in the bundled catalogue, and nothing is saved.
+    Save a coin of the wanted type to the watchlist with a bid. *Expected:* the want's card says "wanted since …" and lists
+    the coin as a row (reference, bid, sale, pill) that opens it; **Look up ↗** opens the popup's card and **Search
+    acsearch ↗** an acsearch search for the type. Record the coin as **Won**. *Expected:* the outcome's line offers
+    **Mark found on your want list**, which marks the want found by that coin.

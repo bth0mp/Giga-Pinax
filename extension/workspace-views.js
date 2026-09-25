@@ -6,7 +6,7 @@ import { calculateBidCost, formatAmount, formatMoney } from './core/money.js';
 import { costFees, eventTiming, feeSheetOf, lotCost, projectExposure, shownCostTotal } from './core/projections.js';
 import { sameZone, zonePlace } from './core/reminders.js';
 import { parseReference } from './lookup.js';
-import { wantTermsText, wonCoinsFor } from './core/wantlist.js';
+import { wantTermsText, watchedLotsFor, wonCoinsFor } from './core/wantlist.js';
 /**
  * @typedef {import('./core/types.js').Lot} Lot
  * @typedef {import('./core/types.js').AuctionEvent} AuctionEvent
@@ -330,10 +330,10 @@ export function sameReference(left, right) {
  * The Want list page's rows (G-22): the wants still wanted first, then the found ones, each in the order it was added,
  * with what it asks beyond its type, the coin that found it (null when that coin is no longer saved here) and where that
  * coin's outcome now stands - an outcome corrected away from won means the want is due again - and the won
- * coins of its type it could be marked found by.
+ * coins of its type it could be marked found by; and, for a want still wanted, the open coins of its type on the watchlist (H-08).
  * @param {Partial<Snapshot> | null | undefined} snapshot
  * @param {string} [locale]
- * @returns {Array<{ want: import('./core/types.js').Want, terms: string, found: Lot | null, foundStatus: string | null, wonCoins: Lot[] }>}
+ * @returns {Array<{ want: import('./core/types.js').Want, terms: string, found: Lot | null, foundStatus: string | null, wonCoins: Lot[], watched: Lot[] }>}
  */
 export function wantListRows(snapshot, locale = 'en-US') {
   const lots = snapshot?.lots ?? [];
@@ -343,6 +343,7 @@ export function wantListRows(snapshot, locale = 'en-US') {
     found: want.foundLotId ? lots.find(({ id }) => id === want.foundLotId) ?? null : null,
     foundStatus: want.foundLotId ? lots.find(({ id }) => id === want.foundLotId)?.outcome?.status ?? null : null,
     wonCoins: want.foundLotId ? [] : wonCoinsFor(want, lots),
+    watched: want.foundLotId ? [] : watchedLotsFor(want, lots),
   }));
   return [...rows.filter(({ want }) => !want.foundLotId), ...rows.filter(({ want }) => want.foundLotId)];
 }
