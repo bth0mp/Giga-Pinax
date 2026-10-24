@@ -36,7 +36,7 @@ jobs:
             exit 1
           fi
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ inputs.tag }}
           persist-credentials: false
@@ -125,7 +125,7 @@ jobs:
             echo 'The repository has no AMO_JWT_ISSUER and AMO_JWT_SECRET secrets; nothing can be signed.' >&2
             exit 1
           fi
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ inputs.tag }}
           persist-credentials: false
